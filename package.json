@@ -4,10 +4,10 @@
   "description": "Celestia - Advanced Space Flight Simulator",
   "main": "dist/index.html",
   "scripts": {
-    "dev": "webpack serve --mode development || http-server dist -p 8080",
-    "build": "webpack --mode production || echo 'Using pre-built dist folder'",
-    "start": "http-server dist -p 3000",
-    "type-check": "tsc --noEmit || echo 'TypeScript check skipped'"
+    "dev": "npx http-server dist -p 8080",
+    "build": "echo 'Using pre-built dist folder'",
+    "start": "npx http-server dist -p 3000",
+    "type-check": "npx tsc --noEmit || echo 'TypeScript check skipped'"
   },
   "keywords": ["space", "simulator", "physics", "game"],
   "author": "",
@@ -21,6 +21,7 @@
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@types/node": "^20.0.0",
+    "http-server": "^14.1.0",
     "typescript": "^5.0.0"
   },
   "engines": {

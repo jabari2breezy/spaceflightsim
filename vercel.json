@@ -1,7 +1,7 @@
 {
-  "buildCommand": "npm run build || echo 'Build skipped - using static dist folder'",
+  "buildCommand": "echo 'Using pre-built dist folder'",
   "devCommand": "npm run dev",
-  "installCommand": "npm install --legacy-peer-deps || true",
+  "installCommand": "npm install --legacy-peer-deps || echo 'Skipping install'",
   "outputDirectory": "dist",
   "cleanUrls": true,
   "trailingSlash": false,

@@ -19,3 +19,5 @@ dist/*.js
 dist/*.map
 dist/*.bundle*
 !dist/index.html
+dist/*.apk
+dist/*.tar.gz
