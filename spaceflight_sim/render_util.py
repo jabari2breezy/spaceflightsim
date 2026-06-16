@@ -1,4 +1,5 @@
 import math
+import random
 import pygame
 from .config import WINDOW_WIDTH, WINDOW_HEIGHT
 
@@ -110,13 +111,53 @@ def draw_thrust_plume(surface, x, y, angle, thrust, zoom):
 
 
 def draw_starfield(surface, stars, camera, width, height):
-    visible = camera.get_visible_rect()
     zoom_log = math.log10(max(camera.zoom, 1e-10))
     star_size = max(1, 1 + zoom_log * 0.2)
+    
     for sx, sy, brightness in stars:
-        screen_x = int((sx - camera.x) * camera.zoom + width / 2)
-        screen_y = int(-(sy - camera.y) * camera.zoom + height / 2)
-        if 0 <= screen_x <= width and 0 <= screen_y <= height:
-            alpha = min(255, max(30, brightness * (1 + zoom_log * 0.1)))
-            color = (int(200 * alpha / 255), int(200 * alpha / 255), int(220 * alpha / 255))
-            draw_circle(surface, color, (screen_x, screen_y), max(1, int(star_size)))
+        depth = 0.01 + brightness * 0.04
+        px = (sx - camera.x * depth) * math.pow(camera.zoom, 0.1)
+        py = -(sy - camera.y * depth) * math.pow(camera.zoom, 0.1)
+        
+        screen_x = int(px) % width
+        screen_y = int(py) % height
+        
+        alpha = min(255, max(30, brightness * 255))
+        color = (int(200 * alpha / 255), int(200 * alpha / 255), int(220 * alpha / 255))
+        draw_circle(surface, color, (screen_x, screen_y), max(1, int(star_size)))
+
+class ParticleSystem:
+    def __init__(self):
+        self.particles = []
+
+    def emit(self, x, y, vx, vy, life, color, size, growth=-0.1):
+        self.particles.append({
+            'x': x, 'y': y, 'vx': vx, 'vy': vy,
+            'life': life, 'max_life': life,
+            'color': color, 'size': size, 'growth': growth
+        })
+
+    def update(self, dt):
+        for p in self.particles:
+            p['x'] += p['vx'] * dt
+            p['y'] += p['vy'] * dt
+            p['life'] -= dt
+            p['size'] += p['growth'] * dt
+        self.particles = [p for p in self.particles if p['life'] > 0 and p['size'] > 0]
+
+    def draw(self, surface, camera):
+        for p in self.particles:
+            alpha = max(0, min(255, int(255 * (p['life'] / p['max_life']))))
+            if alpha <= 0: continue
+            sx, sy = camera.world_to_screen(p['x'], p['y'])
+            r = max(1, int(p['size'] * camera.zoom))
+            if r > 100: continue
+            if -r < sx < WINDOW_WIDTH + r and -r < sy < WINDOW_HEIGHT + r:
+                if len(p['color']) == 4 or alpha < 255:
+                    c = (*p['color'][:3], alpha)
+                    s = pygame.Surface((r*2, r*2), pygame.SRCALPHA)
+                    pygame.draw.circle(s, c, (r, r), r)
+                    surface.blit(s, (sx - r, sy - r))
+                else:
+                    pygame.draw.circle(surface, p['color'][:3], (sx, sy), r)
+

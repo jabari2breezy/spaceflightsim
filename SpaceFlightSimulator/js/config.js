@@ -1,0 +1,42 @@
+const CONFIG = {
+  G: 6.674e-11,
+  SCALE: 1 / 500,
+  DT: 1 / 60,
+  SUBSTEPS: 8,
+  RENDER_DT: 1 / 60,
+
+  PLANET_SCALE: 1.0,
+  ROCKET_SCALE: 3.0,
+
+  ATMOSPHERE_SCALE_HEIGHT: 5000,
+  SEA_LEVEL_PRESSURE: 101325,
+  SEA_LEVEL_DENSITY: 1.225,
+
+  COLORS: {
+    SPACE: '#0a0a1a',
+    STARS: '#ffffff',
+    SKY_DAY: '#4a90d9',
+    SKY_DAWN: '#e8824a',
+    EARTH: '#2d5a27',
+    EARTH_OCEAN: '#1a5c8a',
+    EARTH_ATMO: '#4a90d9',
+    MOON: '#aaaaaa',
+    MARS: '#c1440e',
+    VENUS: '#d4a030',
+    MERCURY: '#8c8c8c',
+    SUN: '#f5d742',
+    FLAME_CORE: '#ffffff',
+    FLAME_HOT: '#ffaa00',
+    FLAME_WARM: '#ff4400',
+    FLAME_COOL: '#aa2200',
+    HUD_TEXT: '#00ff88',
+    HUD_BG: 'rgba(0,0,0,0.7)',
+    ORBIT: '#00ffaa',
+    ORBIT_DRAG: 'rgba(0,255,170,0.3)',
+    SOI: 'rgba(255,255,0,0.15)',
+  },
+
+  EARTH_RADIUS: 6371000,
+  EARTH_MASS: 5.972e24,
+  EARTH_ATMO_HEIGHT: 100000,
+};

@@ -2,7 +2,7 @@ import math
 import random
 import pygame
 from .config import *
-from .render_util import Camera, draw_circle, draw_text, draw_thrust_plume, draw_line, draw_starfield
+from .render_util import Camera, draw_circle, draw_text, draw_thrust_plume, draw_line, draw_starfield, ParticleSystem
 from .physics import PhysicsState, update_physics, find_dominant_body, orbital_elements_from_state
 from .vehicle import Vehicle
 
@@ -14,6 +14,7 @@ class FlightScreen:
         self.physics = PhysicsState()
         self.vehicle = None
         self.bodies = None
+        self.particle_system = ParticleSystem()
 
         self.throttle = 0.0
         self.target_throttle = 0.0
@@ -174,6 +175,8 @@ class FlightScreen:
     def update(self, dt):
         self.time += dt
         effective_dt = dt * self.time_warp
+        if self.time_warp == 1:
+            self.particle_system.update(effective_dt)
 
         if self.time_warp > 100 and self.physics.altitude < 100000:
             self.time_warp = 100
@@ -269,6 +272,18 @@ class FlightScreen:
         thrust_x = engine_thrust * 1000 * math.cos(angle)
         thrust_y = engine_thrust * 1000 * math.sin(angle)
 
+        if engine_thrust > 0 and self.throttle > 0 and self.time_warp == 1:
+            amount = max(1, int(2 * self.throttle * engine_thrust / 100))
+            for _ in range(amount):
+                ex = -math.cos(angle)
+                ey = -math.sin(angle)
+                px = self.physics.x + random.uniform(-0.5, 0.5)
+                py = self.physics.y + random.uniform(-0.5, 0.5)
+                pvx = self.physics.vx + ex * random.uniform(10, 30) + random.uniform(-2, 2)
+                pvy = self.physics.vy + ey * random.uniform(10, 30) + random.uniform(-2, 2)
+                color = (255, random.randint(180, 220), random.randint(100, 150), 200)
+                self.particle_system.emit(px, py, pvx, pvy, random.uniform(0.5, 1.2), color, random.uniform(0.5, 2), growth=1.5)
+
         self.physics.substep_thrust = engine_thrust
         update_physics(self.physics, (thrust_x, thrust_y, torque), self.bodies, dt)
 
@@ -304,6 +319,8 @@ class FlightScreen:
             if self.landing_legs_deployed:
                 self._draw_landing_legs(surface)
 
+        self.particle_system.draw(surface, self.camera)
+
         if self.current_body and self.orbit_path:
             self._draw_orbit_path(surface)
 
@@ -322,19 +339,30 @@ class FlightScreen:
             body_surf = pygame.Surface((max(2, radius * 2 + 4), max(2, radius * 2 + 4)), pygame.SRCALPHA)
             c = max(2, int(radius))
             pygame.draw.circle(body_surf, body.color, (c, c), c)
-            if radius > 20:
-                for i in range(6):
-                    a = body.rotation_angle + i * math.pi / 3
-                    ox = int(radius * 0.5 * math.cos(a))
-                    oy = int(radius * 0.5 * math.sin(a))
-                    lighter = (min(255, body.color[0] + 50), min(255, body.color[1] + 50), min(255, body.color[2] + 50))
-                    pygame.draw.circle(body_surf, lighter, (c + ox, c + oy), max(2, radius // 10))
+            if radius > 10:
+                random.seed(hash(body.name))
+                for _ in range(int(min(50, radius // 2))):
+                    a = body.rotation_angle + random.uniform(0, 2 * math.pi)
+                    dist = random.uniform(0, 0.9)
+                    ox = int(radius * dist * math.cos(a))
+                    oy = int(radius * dist * math.sin(a))
+                    size = max(1, int(radius * random.uniform(0.02, 0.15)))
+                    shade = random.randint(-30, 30)
+                    rc = (max(0, min(255, body.color[0] + shade)),
+                          max(0, min(255, body.color[1] + shade)),
+                          max(0, min(255, body.color[2] + shade)))
+                    pygame.draw.circle(body_surf, rc, (c + ox, c + oy), size)
+                random.seed()
             surface.blit(body_surf, (sx - c, sy - c))
 
             if body.atm_height > 0 and radius > 5:
                 atm_r = max(2, self.camera.world_length(body.radius + body.atm_height))
                 atm_surf = pygame.Surface((atm_r * 2, atm_r * 2), pygame.SRCALPHA)
-                pygame.draw.circle(atm_surf, (*body.color[:3], 18), (atm_r, atm_r), atm_r)
+                for i in range(10, 0, -1):
+                    frac = i / 10.0
+                    r_layer = int(radius + (atm_r - radius) * frac)
+                    alpha = int(60 * (1.0 - frac)**2)
+                    pygame.draw.circle(atm_surf, (*body.color[:3], alpha), (atm_r, atm_r), r_layer)
                 surface.blit(atm_surf, (sx - atm_r, sy - atm_r))
         else:
             draw_circle(surface, body.color, (sx, sy), max(2, radius))
@@ -381,6 +409,22 @@ class FlightScreen:
 
             if len(corners) >= 4:
                 pygame.draw.polygon(surface, part.color, corners)
+                
+                p1, p2, p3, p4 = corners[0], corners[1], corners[2], corners[3]
+                dark_color = (max(0, part.color[0] - 40), max(0, part.color[1] - 40), max(0, part.color[2] - 40))
+                right_poly = [
+                    (p1[0]*0.5 + p2[0]*0.5, p1[1]*0.5 + p2[1]*0.5), p2, p3,
+                    (p4[0]*0.5 + p3[0]*0.5, p4[1]*0.5 + p3[1]*0.5)
+                ]
+                pygame.draw.polygon(surface, dark_color, right_poly)
+                
+                light_color = (min(255, part.color[0] + 40), min(255, part.color[1] + 40), min(255, part.color[2] + 40))
+                left_poly = [
+                    p1, (p1[0]*0.8 + p2[0]*0.2, p1[1]*0.8 + p2[1]*0.2),
+                    (p4[0]*0.8 + p3[0]*0.2, p4[1]*0.8 + p3[1]*0.2), p4
+                ]
+                pygame.draw.polygon(surface, light_color, left_poly)
+                
                 pygame.draw.polygon(surface, COLORS['panel_border'], corners, 1)
 
                 if part.is_fuel_tank() and part.fuel_capacity > 0:
@@ -457,9 +501,9 @@ class FlightScreen:
         pw, ph = 190, 170
         px, py = 10, 10
         panel = pygame.Surface((pw, ph), pygame.SRCALPHA)
-        panel.fill((8, 10, 22, 200))
+        panel.fill((25, 30, 45, 160))
+        pygame.draw.rect(panel, (255, 255, 255, 30), panel.get_rect(), 1, border_radius=6)
         surface.blit(panel, (px, py))
-        pygame.draw.rect(surface, COLORS['panel_border'], (px, py, pw, ph), 1, border_radius=4)
 
         speed = math.hypot(
             self.physics.vx - (self.current_body.vx if self.current_body else 0),
@@ -524,9 +568,9 @@ class FlightScreen:
         pw, ph = 190, 30
         px, py = 10, WINDOW_HEIGHT - ph - 10
         panel = pygame.Surface((pw, ph), pygame.SRCALPHA)
-        panel.fill((8, 10, 22, 200))
+        panel.fill((25, 30, 45, 160))
+        pygame.draw.rect(panel, (255, 255, 255, 30), panel.get_rect(), 1, border_radius=6)
         surface.blit(panel, (px, py))
-        pygame.draw.rect(surface, COLORS['panel_border'], (px, py, pw, ph), 1, border_radius=4)
 
         fuel_pct = 0
         if self.vehicle:
@@ -558,9 +602,9 @@ class FlightScreen:
         spy = WINDOW_HEIGHT - sph - 10
 
         panel = pygame.Surface((spw, sph), pygame.SRCALPHA)
-        panel.fill((8, 10, 22, 200))
+        panel.fill((25, 30, 45, 160))
+        pygame.draw.rect(panel, (255, 255, 255, 30), panel.get_rect(), 1, border_radius=6)
         surface.blit(panel, (spx, spy))
-        pygame.draw.rect(surface, COLORS['panel_border'], (spx, spy, spw, sph), 1, border_radius=4)
 
         draw_text(surface, 'STAGES', 11, spx + spw // 2, spy + 10, COLORS['cyan'])
 
@@ -648,12 +692,29 @@ class FlightScreen:
 
             if self.orbit_path:
                 points = []
+                pe_pt = None
+                ap_pt = None
+                min_d = float('inf')
+                max_d = 0
                 for wx, wy in self.orbit_path:
+                    d = math.hypot(wx - self.current_body.x, wy - self.current_body.y)
+                    if d < min_d: min_d = d; pe_pt = (wx, wy)
+                    if d > max_d: max_d = d; ap_pt = (wx, wy)
                     psx, psy = self.camera.world_to_screen(wx, wy)
                     if -10000 < psx < WINDOW_WIDTH + 10000 and -10000 < psy < WINDOW_HEIGHT + 10000:
                         points.append((psx, psy))
                 if len(points) > 2:
                     pygame.draw.lines(surface, COLORS['green'], False, points, 2)
+                
+                if self.elements and pe_pt and ap_pt:
+                    ap_val = self.elements.get('apoapsis', 0)
+                    if ap_val < 1e8:
+                        apx, apy = self.camera.world_to_screen(*ap_pt)
+                        draw_circle(surface, COLORS['hud_warn'], (apx, apy), 3)
+                        draw_text(surface, f'Ap', 12, apx, apy - 10, COLORS['hud_warn'])
+                    pex, pey = self.camera.world_to_screen(*pe_pt)
+                    draw_circle(surface, COLORS['hud_warn'], (pex, pey), 3)
+                    draw_text(surface, f'Pe', 12, pex, pey - 10, COLORS['hud_warn'])
 
             if self.elements:
                 pe = self.elements.get('periapsis', 0) / 1000
