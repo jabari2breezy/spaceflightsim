@@ -6,6 +6,7 @@ from .render_util import Camera, draw_circle, draw_text, draw_thrust_plume, draw
 from .physics import PhysicsState, update_physics, find_dominant_body, orbital_elements_from_state
 from .vehicle import Vehicle
 
+
 class FlightScreen:
     def __init__(self, game):
         self.game = game
@@ -311,7 +312,6 @@ class FlightScreen:
                 self._draw_crash_screen(surface)
             else:
                 self._draw_hud(surface)
-                self._draw_staging(surface)
 
     def _draw_body(self, surface):
         body = self.current_body
@@ -392,7 +392,7 @@ class FlightScreen:
                             int((corners[2][1] - corners[0][1]) * fuel_ratio) - 4
                         )
                         if inner_rect.w > 2 and inner_rect.h > 2:
-                            pygame.draw.rect(surface, (0, 100, 200), inner_rect)
+                            pygame.draw.rect(surface, (80, 100, 140), inner_rect)
 
     def _draw_thrust(self, surface):
         if not self.vehicle or self.throttle <= 0:
@@ -448,32 +448,85 @@ class FlightScreen:
             pygame.draw.lines(surface, COLORS['green_dim'], False, points, 1)
 
     def _draw_hud(self, surface):
-        panel = pygame.Surface((270, 280), pygame.SRCALPHA)
-        panel.fill((15, 15, 20, 200))
-        surface.blit(panel, (8, 8))
+        self._draw_telemetry_panel(surface)
+        self._draw_fuel_bar(surface)
+        self._draw_staging_panel(surface)
+        self._draw_status_indicators(surface)
 
-        body_name = self.current_body.name if self.current_body else 'Unknown'
-        alt_km = self.physics.altitude / 1000
+    def _draw_telemetry_panel(self, surface):
+        pw, ph = 190, 170
+        px, py = 10, 10
+        panel = pygame.Surface((pw, ph), pygame.SRCALPHA)
+        panel.fill((8, 10, 22, 200))
+        surface.blit(panel, (px, py))
+        pygame.draw.rect(surface, COLORS['panel_border'], (px, py, pw, ph), 1, border_radius=4)
+
         speed = math.hypot(
             self.physics.vx - (self.current_body.vx if self.current_body else 0),
             self.physics.vy - (self.current_body.vy if self.current_body else 0))
+        alt_km = self.physics.altitude / 1000
 
-        lines = [
-            f'ALT: {alt_km:.1f} km',
-            f'SPD: {speed:.1f} m/s',
-            f'THR: {self.throttle * 100:.0f}%',
-            f'T+ : {self._format_time(self.mission_time)}',
-            f'BODY: {body_name}',
-        ]
+        alt_color = COLORS['hud_warn']
+        alt_text = f'{alt_km:.2f}' if alt_km < 100 else f'{alt_km:.0f}'
+        alt_unit = 'km' if alt_km >= 1 else 'm'
+        alt_val = self.physics.altitude if alt_km < 1 else alt_km
+
+        draw_text(surface, 'ALT', 13, px + 22, py + 12, COLORS['hud_label'])
+        if alt_km < 1:
+            draw_text(surface, f'{self.physics.altitude:.0f}', 28, px + 22, py + 38, alt_color)
+            draw_text(surface, 'm', 13, px + 70, py + 32, COLORS['hud_label'])
+        else:
+            draw_text(surface, f'{alt_km:.2f}', 28, px + 22, py + 38, alt_color)
+            draw_text(surface, 'km', 13, px + 80, py + 32, COLORS['hud_label'])
+
+        draw_text(surface, 'SPD', 13, px + 22, py + 72, COLORS['hud_label'])
+        draw_text(surface, f'{speed:.1f}', 22, px + 22, py + 95, COLORS['hud_value'])
+        draw_text(surface, 'm/s', 11, px + 70, py + 90, COLORS['hud_label'])
+
+        throttle_pct = self.throttle * 100
+        draw_text(surface, 'THR', 13, px + 22, py + 128, COLORS['hud_label'])
+        bar_w = 120
+        bar_h = 8
+        bar_x = px + 50
+        bar_y = py + 130
+        pygame.draw.rect(surface, COLORS['fuel_bar_bg'], (bar_x, bar_y, bar_w, bar_h))
+        fill_w = int(bar_w * self.throttle)
+        if fill_w > 0:
+            tc = COLORS['orange'] if throttle_pct < 50 else COLORS['yellow']
+            pygame.draw.rect(surface, tc, (bar_x, bar_y, fill_w, bar_h))
+        draw_text(surface, f'{throttle_pct:.0f}%', 11, bar_x + bar_w + 28, bar_y + 4, COLORS['hud_value'])
 
         if self.elements:
-            pe = self.elements.get('periapsis', 0) / 1000
-            ap = self.elements.get('apoapsis', 0) / 1000
+            pe = self.elements.get('periapsis', 0)
+            ap = self.elements.get('apoapsis', 0)
+            el_y = py + ph + 5
+
             if ap < 1e8:
-                lines.append(f'Pe: {pe:.0f} km')
-                lines.append(f'Ap: {ap:.0f} km')
+                info_panel = pygame.Surface((pw, 50), pygame.SRCALPHA)
+                info_panel.fill((8, 10, 22, 200))
+                surface.blit(info_panel, (px, el_y))
+                pygame.draw.rect(surface, COLORS['panel_border'], (px, el_y, pw, 50), 1, border_radius=4)
+
+                pe_km = pe / 1000
+                ap_km = ap / 1000
+                draw_text(surface, 'Pe', 12, px + 22, el_y + 12, COLORS['hud_warn'])
+                draw_text(surface, f'{pe_km:.1f} km', 16, px + 22, el_y + 32, COLORS['hud_value'])
+                draw_text(surface, 'Ap', 12, px + pw // 2 + 10, el_y + 12, COLORS['hud_warn'])
+                draw_text(surface, f'{ap_km:.1f} km', 16, px + pw // 2 + 10, el_y + 32, COLORS['hud_value'])
             else:
-                lines.append('ESCAPE TRAJECTORY')
+                info_panel = pygame.Surface((pw, 28), pygame.SRCALPHA)
+                info_panel.fill((8, 10, 22, 200))
+                surface.blit(info_panel, (px, el_y))
+                pygame.draw.rect(surface, COLORS['panel_border'], (px, el_y, pw, 28), 1, border_radius=4)
+                draw_text(surface, 'ESCAPE', 14, px + pw // 2, el_y + 14, COLORS['hud_warn'])
+
+    def _draw_fuel_bar(self, surface):
+        pw, ph = 190, 30
+        px, py = 10, WINDOW_HEIGHT - ph - 10
+        panel = pygame.Surface((pw, ph), pygame.SRCALPHA)
+        panel.fill((8, 10, 22, 200))
+        surface.blit(panel, (px, py))
+        pygame.draw.rect(surface, COLORS['panel_border'], (px, py, pw, ph), 1, border_radius=4)
 
         fuel_pct = 0
         if self.vehicle:
@@ -482,74 +535,93 @@ class FlightScreen:
             total_fuel = sum(p.fuel for p in tanks)
             fuel_pct = (total_fuel / total_cap * 100) if total_cap > 0 else 0
 
-        for i, line in enumerate(lines):
-            c = COLORS['yellow'] if any(line.startswith(x) for x in ('ALT', 'Pe', 'Ap')) else COLORS['white']
-            draw_text(surface, line, 16, 140, 28 + i * 20, c)
-
+        draw_text(surface, 'FUEL', 12, px + 22, py + ph // 2, COLORS['hud_label'])
+        bar_w = 100
+        bar_h = 12
+        bar_x = px + 48
+        bar_y = py + ph // 2 - bar_h // 2
+        pygame.draw.rect(surface, COLORS['fuel_bar_bg'], (bar_x, bar_y, bar_w, bar_h))
         if fuel_pct > 0:
-            fcolor = COLORS['green'] if fuel_pct > 30 else (COLORS['orange'] if fuel_pct > 10 else COLORS['red'])
-            fuel_rect = pygame.Rect(12, 212, 190, 10)
-            pygame.draw.rect(surface, COLORS['dark_grey'], fuel_rect)
-            pygame.draw.rect(surface, fcolor, (12, 212, int(190 * fuel_pct / 100), 10))
-            draw_text(surface, f'FUEL {fuel_pct:.0f}%', 12, 107, 220, COLORS['white'])
+            fill_w = int(bar_w * fuel_pct / 100)
+            fc = COLORS['fuel_bar_fill'] if fuel_pct > 20 else COLORS['hud_danger']
+            pygame.draw.rect(surface, fc, (bar_x, bar_y, fill_w, bar_h))
+        draw_text(surface, f'{fuel_pct:.0f}%', 11, bar_x + bar_w + 24, py + ph // 2, COLORS['hud_value'])
 
-        rcs_text = f'RCS:{"ON" if self.rcs_active else "OFF"}'
-        sas_text = f'SAS:{"ON" if self.sas_active else "OFF"}'
-        warp_text = f'TIME x{self.time_warp}'
-
-        right_x = WINDOW_WIDTH - 10
-        draw_text(surface, sas_text, 13, right_x - 40, 25, COLORS['green'] if self.sas_active else COLORS['mid_grey'], center=False)
-        draw_text(surface, rcs_text, 13, right_x - 40, 42, COLORS['green'] if self.rcs_active else COLORS['mid_grey'], center=False)
-        draw_text(surface, warp_text, 13, right_x - 40, 59, COLORS['orange'], center=False)
-
-        chute_deployed = any(p.deployed for p in self.vehicle.all_parts if p.is_parachute())
-        legs_deployed = any(p.deployed for p in self.vehicle.all_parts if p.is_landing_leg())
-        if chute_deployed:
-            draw_text(surface, 'CHUTE:DEPLOYED', 12, right_x - 40, 80, COLORS['red'], center=False)
-        if legs_deployed:
-            draw_text(surface, 'LEGS:DEPLOYED', 12, right_x - 40, 95, COLORS['orange'], center=False)
-
-    def _draw_staging(self, surface):
-        if not self.vehicle:
+    def _draw_staging_panel(self, surface):
+        if not self.vehicle or not self.vehicle.stages:
             return
+
         stages = self.vehicle.stages
-        if not stages:
-            return
+        spw = 140
+        sph = 30 + len(stages) * 28
+        spx = WINDOW_WIDTH - spw - 10
+        spy = WINDOW_HEIGHT - sph - 10
 
-        panel_x = WINDOW_WIDTH - 155
-        panel_y = WINDOW_HEIGHT - 40 - len(stages) * 24
+        panel = pygame.Surface((spw, sph), pygame.SRCALPHA)
+        panel.fill((8, 10, 22, 200))
+        surface.blit(panel, (spx, spy))
+        pygame.draw.rect(surface, COLORS['panel_border'], (spx, spy, spw, sph), 1, border_radius=4)
 
-        panel = pygame.Surface((150, 10 + len(stages) * 24), pygame.SRCALPHA)
-        panel.fill((15, 15, 20, 190))
-        surface.blit(panel, (panel_x, panel_y))
+        draw_text(surface, 'STAGES', 11, spx + spw // 2, spy + 10, COLORS['cyan'])
 
-        draw_text(surface, 'STAGES', 12, panel_x + 75, panel_y + 8, COLORS['white'])
-
+        node_x = spx + 25
         for i, stage in enumerate(stages):
-            y = panel_y + 24 + i * 24
-            if stage.separated:
-                color = COLORS['red_dim']
-                label = f'[{i}] FIRED'
-            elif stage.active:
-                color = COLORS['green']
-                label = f'[{i}] ACTIVE'
-            else:
-                color = COLORS['mid_grey']
-                label = f'[{i}] READY'
-            draw_text(surface, label, 12, panel_x + 75, y, color)
+            y = spy + 28 + i * 28
+            color = COLORS['green'] if stage.active else (COLORS['mid_grey'] if not stage.separated else COLORS['red_dim'])
+            label = 'ACTIVE' if stage.active else ('READY' if not stage.separated else 'FIRED')
+
+            draw_circle(surface, color, (node_x, y), 5)
+            draw_text(surface, f'STAGE {i + 1}', 10, node_x + 14, y - 4, COLORS['hud_value'], center=False)
+            draw_text(surface, label, 9, node_x + 14, y + 8, color, center=False)
+
+            if i < len(stages) - 1:
+                draw_line(surface, COLORS['mid_grey'], (node_x, y + 5), (node_x, y + 23), 1)
+
+    def _draw_status_indicators(self, surface):
+        right_x = WINDOW_WIDTH - 12
+
+        sas_color = COLORS['green'] if self.sas_active else COLORS['mid_grey']
+        rcs_color = COLORS['green'] if self.rcs_active else COLORS['mid_grey']
+
+        sas_rect = pygame.Rect(right_x - 110, 10, 55, 20)
+        rcs_rect = pygame.Rect(right_x - 55, 10, 55, 20)
+
+        pygame.draw.rect(surface, COLORS['panel'], sas_rect, border_radius=3)
+        pygame.draw.rect(surface, COLORS['panel_border'], sas_rect, 1, border_radius=3)
+        pygame.draw.circle(surface, sas_color, (right_x - 98, 20), 4)
+        draw_text(surface, 'SAS', 10, right_x - 86, 20, COLORS['white'])
+
+        pygame.draw.rect(surface, COLORS['panel'], rcs_rect, border_radius=3)
+        pygame.draw.rect(surface, COLORS['panel_border'], rcs_rect, 1, border_radius=3)
+        pygame.draw.circle(surface, rcs_color, (right_x - 43, 20), 4)
+        draw_text(surface, 'RCS', 10, right_x - 31, 20, COLORS['white'])
+
+        warp_text = f'{self.time_warp}x'
+        draw_text(surface, warp_text, 11, right_x - 55, 38, COLORS['orange'])
+
+        body_name = self.current_body.name if self.current_body else '?'
+        draw_text(surface, body_name, 11, right_x - 55, 55, COLORS['light_grey'])
+
+        if self.parachute_deployed:
+            draw_text(surface, 'CHUTE', 10, right_x - 55, 72, COLORS['hud_danger'])
+        if self.landing_legs_deployed:
+            draw_text(surface, 'LEGS', 10, right_x - 55, 86, COLORS['orange'])
+
+        mission_text = self._format_time(self.mission_time)
+        draw_text(surface, mission_text, 11, right_x - 55, WINDOW_HEIGHT - 20, COLORS['light_grey'])
 
     def _draw_crash_screen(self, surface):
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
-        overlay.fill((80, 10, 10, 120))
+        overlay.fill((60, 8, 8, 160))
         surface.blit(overlay, (0, 0))
 
         cx = WINDOW_WIDTH // 2
         cy = WINDOW_HEIGHT // 2
-        draw_text(surface, 'DESTROYED', 60, cx, cy - 40, COLORS['red'])
-        draw_text(surface, 'Press ENTER to return to menu', 18, cx, cy + 20, COLORS['white'])
-        draw_text(surface, f'Max altitude: {self.max_altitude / 1000:.1f} km', 16, cx, cy + 55, COLORS['light_grey'])
-        draw_text(surface, f'Max speed: {self.max_speed:.0f} m/s', 16, cx, cy + 78, COLORS['light_grey'])
-        draw_text(surface, f'Mission time: {self._format_time(self.mission_time)}', 16, cx, cy + 101, COLORS['light_grey'])
+        draw_text(surface, 'DESTROYED', 60, cx, cy - 50, COLORS['hud_danger'])
+        draw_text(surface, 'Press ENTER to return to menu', 18, cx, cy + 15, COLORS['white'])
+        draw_text(surface, f'Max altitude: {self.max_altitude / 1000:.1f} km', 16, cx, cy + 50, COLORS['light_grey'])
+        draw_text(surface, f'Max speed: {self.max_speed:.0f} m/s', 16, cx, cy + 73, COLORS['light_grey'])
+        draw_text(surface, f'Mission time: {self._format_time(self.mission_time)}', 16, cx, cy + 96, COLORS['light_grey'])
 
     def _draw_map_view(self, surface):
         surface.fill(COLORS['space_bg'])
@@ -565,7 +637,7 @@ class FlightScreen:
                 draw_line(surface, COLORS['dark_grey'], (px, py), (sx, sy), 1)
 
             if body == self.current_body:
-                draw_circle(surface, COLORS['white'], (sx, sy), radius + 3, 1)
+                draw_circle(surface, COLORS['cyan'], (sx, sy), radius + 3, 1)
 
             if radius > 5:
                 draw_text(surface, body.name, 11, sx, sy + radius + 10, COLORS['white'])
@@ -597,8 +669,9 @@ class FlightScreen:
                     info.append('Hyperbolic trajectory')
 
                 panel = pygame.Surface((240, 12 + len(info) * 20), pygame.SRCALPHA)
-                panel.fill((10, 10, 15, 200))
+                panel.fill((8, 10, 22, 200))
                 surface.blit(panel, (10, 10))
+                pygame.draw.rect(surface, COLORS['panel_border'], (10, 10, 240, 12 + len(info) * 20), 1)
                 for i, line in enumerate(info):
                     draw_text(surface, line, 14, 130, 20 + i * 20, COLORS['white'])
 
@@ -606,14 +679,14 @@ class FlightScreen:
 
     def _format_time(self, seconds):
         if seconds < 60:
-            return f'{seconds:.0f}s'
+            return f'T+{seconds:.0f}s'
         elif seconds < 3600:
-            return f'{int(seconds // 60)}m {int(seconds % 60)}s'
+            return f'T+{int(seconds // 60)}m {int(seconds % 60)}s'
         elif seconds < 86400:
             h = int(seconds // 3600)
             m = int((seconds % 3600) // 60)
-            return f'{h}h {m}m'
+            return f'T+{h}h {m}m'
         else:
             d = int(seconds // 86400)
             h = int((seconds % 86400) // 3600)
-            return f'{d}d {h}h'
+            return f'T+{d}d {h}h'
