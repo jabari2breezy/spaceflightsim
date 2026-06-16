@@ -149,6 +149,28 @@ export class PhysicsEngine {
       this.integrateRK4(substep, engineThrust);
     }
 
+    // Planetary surface collision and clamping
+    for (const body of this.bodies.values()) {
+      const dx = this.state.position.x - body.position.x;
+      const dy = this.state.position.y - body.position.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      
+      if (dist < body.radius) {
+        const nx = dx / dist;
+        const ny = dy / dist;
+        // Snap position to surface
+        this.state.position.x = body.position.x + nx * (body.radius + 0.1);
+        this.state.position.y = body.position.y + ny * (body.radius + 0.1);
+
+        // Cancel out velocity components pointing into the planet
+        const dot = this.state.velocity.x * nx + this.state.velocity.y * ny;
+        if (dot < 0) {
+          this.state.velocity.x -= dot * nx;
+          this.state.velocity.y -= dot * ny;
+        }
+      }
+    }
+
     // Record trajectory history
     this.trajectoryHistory.push({
       position: { ...this.state.position },

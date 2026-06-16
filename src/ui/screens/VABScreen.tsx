@@ -14,6 +14,7 @@ interface PlacedPart {
   type: string;
   gx: number; // grid x position
   gy: number; // grid y position
+  rotation?: number; // rotation in degrees (0, 90, 180, 270)
 }
 
 // Map part type to integer grid sizes so everything aligns and snaps perfectly
@@ -45,6 +46,7 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
   const [placedParts, setPlacedParts] = useState<PlacedPart[]>([]);
   const [draggedPartType, setDraggedPartType] = useState<string | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null); // if dragging an already placed part
+  const [heldRotation, setHeldRotation] = useState(0); // in degrees (0, 90, 180, 270)
   
   const [spacecraftName, setSpacecraftName] = useState('My Custom Rocket');
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -53,6 +55,35 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
   const cellSize = 30;
   const gridCols = 12;
   const gridRows = 18;
+
+  // Keyboard R rotation listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'r' || e.key === 'R') {
+        setHeldRotation((prev) => (prev + 90) % 360);
+
+        // If hovering over a placed part and not dragging, rotate it directly
+        if (!draggedPartType && !activeDragId && hoveredCell) {
+          setPlacedParts((prev) =>
+            prev.map((p) => {
+              const gSize = getPartGridSize(p.type);
+              const inside =
+                hoveredCell.gx >= p.gx &&
+                hoveredCell.gx < p.gx + gSize.w &&
+                hoveredCell.gy >= p.gy &&
+                hoveredCell.gy < p.gy + gSize.h;
+              return inside ? { ...p, rotation: ((p.rotation || 0) + 90) % 360 } : p;
+            })
+          );
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [draggedPartType, activeDragId, hoveredCell]);
 
   // Interactive 2D Canvas rendering loop for VAB Floor
   useEffect(() => {
@@ -110,7 +141,11 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
         const x = gridLeft + placed.gx * cellSize + w / 2;
         const y = gridTop + placed.gy * cellSize + h / 2;
 
-        drawPart2D(ctx, spec, x, y, w, h);
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(((placed.rotation || 0) * Math.PI) / 180);
+        drawPart2D(ctx, spec, 0, 0, w, h);
+        ctx.restore();
       });
 
       // Draw drag preview under mouse
@@ -126,7 +161,9 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
 
           ctx.save();
           ctx.globalAlpha = 0.55;
-          drawPart2D(ctx, spec, x, y, w, h);
+          ctx.translate(x, y);
+          ctx.rotate((heldRotation * Math.PI) / 180);
+          drawPart2D(ctx, spec, 0, 0, w, h);
           ctx.restore();
 
           // Highlight green snap target outline
@@ -138,7 +175,7 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
     };
 
     render();
-  }, [placedParts, draggedPartType, activeDragId, hoveredCell]);
+  }, [placedParts, draggedPartType, activeDragId, hoveredCell, heldRotation]);
 
   // Handle drag coordinates calculation
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -180,6 +217,7 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
 
     if (clicked) {
       setActiveDragId(clicked.id);
+      setHeldRotation(clicked.rotation || 0);
       setHoveredCell({ gx: clicked.gx, gy: clicked.gy });
     }
   };
@@ -194,19 +232,22 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
           type: draggedPartType,
           gx: hoveredCell.gx,
           gy: hoveredCell.gy,
+          rotation: heldRotation,
         };
         setPlacedParts((prev) => [...prev, newPart]);
         setDraggedPartType(null);
+        setHeldRotation(0);
       } else if (activeDragId) {
         // Drop already placed part onto new snap location
         setPlacedParts((prev) =>
           prev.map((p) =>
             p.id === activeDragId
-              ? { ...p, gx: hoveredCell.gx, gy: hoveredCell.gy }
+              ? { ...p, gx: hoveredCell.gx, gy: hoveredCell.gy, rotation: heldRotation }
               : p
           )
         );
         setActiveDragId(null);
+        setHeldRotation(0);
       }
     } else {
       // If dropped outside grid, delete/cancel drag
@@ -215,12 +256,14 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
         setActiveDragId(null);
       }
       setDraggedPartType(null);
+      setHeldRotation(0);
     }
   };
 
   // Start dragging from palette
   const handlePaletteStartDrag = (type: string) => {
     setDraggedPartType(type);
+    setHeldRotation(0);
   };
 
   // Compile placed parts list into sequential Stages spacecraft object
@@ -243,6 +286,10 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
       const partInst: SpacecraftPart = {
         ...template,
         id: `${template.id}-${Date.now()}-${Math.random()}`,
+        properties: {
+          ...template.properties,
+          rotation: p.rotation || 0,
+        }
       };
 
       currentStageParts.push(partInst);
@@ -332,7 +379,7 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
             }}
           />
           <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>
-            Click & Drag Rocket Builder (Standardized Grid System)
+            Click & Drag Rocket Builder (Press R to rotate held or hovered parts)
           </div>
         </div>
 
@@ -385,7 +432,7 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
             DRAG PALETTE
           </h3>
           <p style={{ fontSize: '11px', color: '#64748B', marginBottom: '15px' }}>
-            Hold & drag parts from here directly onto the grid. Drag placed parts inside the grid to reposition them. Drop off-grid to delete.
+            Hold & drag parts from here directly onto the grid. Hover over any part and press <b>R</b> to rotate it. Drop off-grid to delete.
           </p>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -440,7 +487,7 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
               color: '#FFF',
               fontWeight: 'bold'
             }}>
-              Dragging Part... Release over the grid to snap place!
+              Dragging Part... Press <b>R</b> to rotate, release over the grid to snap place!
             </div>
           )}
         </div>

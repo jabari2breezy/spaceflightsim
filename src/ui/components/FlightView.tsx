@@ -283,7 +283,11 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
             rcsDir = isSteeringLeft ? 'right' : isSteeringRight ? 'left' : null;
           }
 
-          drawPart2D(ctx, part, 0, currentY - partH / 2, partW, partH, rcsDir, game.throttle / 100);
+          ctx.save();
+          ctx.translate(0, currentY - partH / 2);
+          ctx.rotate(((part.properties.rotation || 0) * Math.PI) / 180);
+          drawPart2D(ctx, part, 0, 0, partW, partH, rcsDir, game.throttle / 100);
+          ctx.restore();
 
           currentY -= partH;
         });
