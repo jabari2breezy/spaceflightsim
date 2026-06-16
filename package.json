@@ -4,8 +4,8 @@
   "description": "Celestia - Advanced Space Flight Simulator",
   "main": "dist/index.html",
   "scripts": {
-    "dev": "npx http-server dist -p 8080",
-    "build": "echo 'Using pre-built dist folder'",
+    "dev": "webpack serve --mode development",
+    "build": "webpack --mode production",
     "start": "npx http-server dist -p 3000",
     "type-check": "npx tsc --noEmit || echo 'TypeScript check skipped'"
   },
