@@ -16,20 +16,45 @@ interface PlacedPart {
   gy: number; // grid y position
 }
 
+// Map part type to integer grid sizes so everything aligns and snaps perfectly
+export const getPartGridSize = (type: string): { w: number; h: number } => {
+  switch (type) {
+    case 'rp1-tank-1':
+    case 'lh2-tank-1':
+      return { w: 2, h: 3 }; // Tanks: 2 wide, 3 tall
+    case 'merlin-1d':
+    case 'rs-25':
+      return { w: 2, h: 2 }; // Engines: 2 wide, 2 tall (perfect fit)
+    case 'guidance-computer':
+    case 'ablative-shield':
+    case 'tank-cap-large':
+    case 'interstage':
+      return { w: 2, h: 1 }; // Adaptors: 2 wide, 1 tall
+    case 'ion-drive':
+    case 'rcs-thruster':
+    case 'antenna-hga':
+      return { w: 1, h: 1 }; // Utility: 1 wide, 1 tall
+    case 'solar-panel':
+      return { w: 1, h: 2 }; // Side attachments: 1 wide, 2 tall
+    default:
+      return { w: 2, h: 2 };
+  }
+};
+
 const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
   const [placedParts, setPlacedParts] = useState<PlacedPart[]>([]);
-  const [heldPartId, setHeldPartId] = useState<string | null>(null);
-  const [spacecraftName, setSpacecraftName] = useState('My Custom Rocket');
+  const [draggedPartType, setDraggedPartType] = useState<string | null>(null);
+  const [activeDragId, setActiveDragId] = useState<string | null>(null); // if dragging an already placed part
   
+  const [spacecraftName, setSpacecraftName] = useState('My Custom Rocket');
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [hoveredCell, setHoveredCell] = useState<{ gx: number; gy: number } | null>(null);
 
   const cellSize = 30;
-  const gridCols = 10;
-  const gridRows = 16;
+  const gridCols = 12;
+  const gridRows = 18;
 
-  // Interactive 2D Canvas rendering loop for the Build Grid
+  // Interactive 2D Canvas rendering loop for VAB Floor
   useEffect(() => {
     if (!canvasRef.current) return;
 
@@ -47,12 +72,12 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
     const gridTop = (canvas.height - gridHeight) / 2;
 
     const render = () => {
-      // Clear canvas
-      ctx.fillStyle = '#0B0D19';
+      // Clear with dark blueprints color
+      ctx.fillStyle = '#090B14';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Draw snapping grid dots/cells
-      ctx.strokeStyle = '#1E293B';
+      // Draw grid blueprint lines
+      ctx.strokeStyle = 'rgba(30, 41, 59, 0.5)';
       ctx.lineWidth = 1;
 
       for (let c = 0; c <= gridCols; c++) {
@@ -71,25 +96,31 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
         ctx.stroke();
       }
 
-      // Draw placed parts on the grid
+      // Draw placed parts on grid
       placedParts.forEach((placed) => {
+        // Skip rendering if this part is actively being dragged/moved
+        if (placed.id === activeDragId) return;
+
         const spec = PARTS_LIBRARY[placed.type];
         if (!spec) return;
 
-        const w = spec.dimensions.x * cellSize;
-        const h = spec.dimensions.y * cellSize;
+        const gSize = getPartGridSize(placed.type);
+        const w = gSize.w * cellSize;
+        const h = gSize.h * cellSize;
         const x = gridLeft + placed.gx * cellSize + w / 2;
         const y = gridTop + placed.gy * cellSize + h / 2;
 
         drawPart2D(ctx, spec, x, y, w, h);
       });
 
-      // Draw ghost preview of the held part under the cursor
-      if (heldPartId && hoveredCell) {
-        const spec = PARTS_LIBRARY[heldPartId];
+      // Draw drag preview under mouse
+      const activeType = draggedPartType || (activeDragId ? placedParts.find(p => p.id === activeDragId)?.type : null);
+      if (activeType && hoveredCell) {
+        const spec = PARTS_LIBRARY[activeType];
         if (spec) {
-          const w = spec.dimensions.x * cellSize;
-          const h = spec.dimensions.y * cellSize;
+          const gSize = getPartGridSize(activeType);
+          const w = gSize.w * cellSize;
+          const h = gSize.h * cellSize;
           const x = gridLeft + hoveredCell.gx * cellSize + w / 2;
           const y = gridTop + hoveredCell.gy * cellSize + h / 2;
 
@@ -98,7 +129,7 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
           drawPart2D(ctx, spec, x, y, w, h);
           ctx.restore();
 
-          // Green snap guide border
+          // Highlight green snap target outline
           ctx.strokeStyle = '#10B981';
           ctx.lineWidth = 2;
           ctx.strokeRect(gridLeft + hoveredCell.gx * cellSize, gridTop + hoveredCell.gy * cellSize, w, h);
@@ -107,17 +138,15 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
     };
 
     render();
-  }, [placedParts, heldPartId, hoveredCell]);
+  }, [placedParts, draggedPartType, activeDragId, hoveredCell]);
 
-  // Track mouse coordinates
+  // Handle drag coordinates calculation
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!canvasRef.current) return;
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-
-    setMousePos({ x, y });
 
     const gridWidth = gridCols * cellSize;
     const gridHeight = gridRows * cellSize;
@@ -134,44 +163,70 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
     }
   };
 
-  // Snapped placement click handler
-  const handleCanvasClick = () => {
+  // Drag and drop trigger mousedown
+  const handleCanvasMouseDown = () => {
     if (!hoveredCell) return;
 
-    if (heldPartId) {
-      // Place the held part on the grid snapping target
-      const spec = PARTS_LIBRARY[heldPartId];
-      if (spec) {
+    // Check if clicking on an already placed part to drag/move it
+    const clicked = placedParts.find((p) => {
+      const gSize = getPartGridSize(p.type);
+      return (
+        hoveredCell.gx >= p.gx &&
+        hoveredCell.gx < p.gx + gSize.w &&
+        hoveredCell.gy >= p.gy &&
+        hoveredCell.gy < p.gy + gSize.h
+      );
+    });
+
+    if (clicked) {
+      setActiveDragId(clicked.id);
+      setHoveredCell({ gx: clicked.gx, gy: clicked.gy });
+    }
+  };
+
+  // Drop part on mouseup
+  const handleCanvasMouseUp = () => {
+    if (hoveredCell) {
+      if (draggedPartType) {
+        // Place new part dragged from panel
         const newPart: PlacedPart = {
-          id: `${heldPartId}-${Date.now()}`,
-          type: heldPartId,
+          id: `${draggedPartType}-${Date.now()}`,
+          type: draggedPartType,
           gx: hoveredCell.gx,
           gy: hoveredCell.gy,
         };
         setPlacedParts((prev) => [...prev, newPart]);
-        setHeldPartId(null); // release held part
+        setDraggedPartType(null);
+      } else if (activeDragId) {
+        // Drop already placed part onto new snap location
+        setPlacedParts((prev) =>
+          prev.map((p) =>
+            p.id === activeDragId
+              ? { ...p, gx: hoveredCell.gx, gy: hoveredCell.gy }
+              : p
+          )
+        );
+        setActiveDragId(null);
       }
     } else {
-      // If clicking an already placed part on the grid, pick it up (move back to held)
-      const clicked = placedParts.find(
-        (p) =>
-          hoveredCell.gx >= p.gx &&
-          hoveredCell.gx < p.gx + (PARTS_LIBRARY[p.type]?.dimensions.x || 1) &&
-          hoveredCell.gy >= p.gy &&
-          hoveredCell.gy < p.gy + (PARTS_LIBRARY[p.type]?.dimensions.y || 1)
-      );
-
-      if (clicked) {
-        setHeldPartId(clicked.type);
-        setPlacedParts((prev) => prev.filter((p) => p.id !== clicked.id));
+      // If dropped outside grid, delete/cancel drag
+      if (activeDragId) {
+        setPlacedParts((prev) => prev.filter((p) => p.id !== activeDragId));
+        setActiveDragId(null);
       }
+      setDraggedPartType(null);
     }
   };
 
-  // Compile placed parts into a staging rocket spacecraft object
-  const launchRocket = () => {
+  // Start dragging from palette
+  const handlePaletteStartDrag = (type: string) => {
+    setDraggedPartType(type);
+  };
+
+  // Compile placed parts list into sequential Stages spacecraft object
+  const compileSpacecraft = () => {
     if (placedParts.length === 0) {
-      alert('Your build grid is empty! Place some parts first.');
+      alert('Grid is empty! Drag some parts on to build a rocket.');
       return;
     }
 
@@ -277,7 +332,7 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
             }}
           />
           <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>
-            Snapping Assembly Builder
+            Click & Drag Rocket Builder (Standardized Grid System)
           </div>
         </div>
 
@@ -298,7 +353,7 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
           </button>
           
           <button
-            onClick={launchRocket}
+            onClick={compileSpacecraft}
             style={{
               padding: '8px 20px',
               backgroundColor: '#10B981',
@@ -327,29 +382,30 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
           overflowY: 'auto'
         }}>
           <h3 style={{ borderBottom: '1px solid #1E293B', paddingBottom: '8px', color: '#00E5FF', fontSize: '14px', letterSpacing: '1px' }}>
-            PART PALETTE
+            DRAG PALETTE
           </h3>
           <p style={{ fontSize: '11px', color: '#64748B', marginBottom: '15px' }}>
-            Click a part to pick it up, then click on the grid area to place and click it in.
+            Hold & drag parts from here directly onto the grid. Drag placed parts inside the grid to reposition them. Drop off-grid to delete.
           </p>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {Object.values(PARTS_LIBRARY).map((part) => (
               <div
                 key={part.id}
-                onClick={() => setHeldPartId(part.id)}
+                onMouseDown={() => handlePaletteStartDrag(part.id)}
                 style={{
-                  padding: '10px',
-                  backgroundColor: heldPartId === part.id ? '#1E293B' : '#0F172A',
-                  border: heldPartId === part.id ? '1px solid #00E5FF' : '1px solid #1E293B',
+                  padding: '12px',
+                  backgroundColor: '#0F172A',
+                  border: '1px solid #1E293B',
                   borderRadius: '6px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease'
+                  cursor: 'grab',
+                  userSelect: 'none',
+                  transition: 'all 0.15s ease'
                 }}
               >
                 <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#FFF' }}>{part.name}</div>
                 <div style={{ fontSize: '10px', color: '#94A3B8', marginTop: '4px' }}>
-                  Type: {part.type} | Mass: {part.dryMass}kg
+                  Grid Size: {getPartGridSize(part.id).w}x{getPartGridSize(part.id).h}
                 </div>
               </div>
             ))}
@@ -368,21 +424,23 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
           <canvas
             ref={canvasRef}
             onMouseMove={handleMouseMove}
-            onClick={handleCanvasClick}
-            style={{ width: '100%', height: '100%', cursor: heldPartId ? 'crosshair' : 'default' }}
+            onMouseDown={handleCanvasMouseDown}
+            onMouseUp={handleCanvasMouseUp}
+            style={{ width: '100%', height: '100%', cursor: (draggedPartType || activeDragId) ? 'grabbing' : 'default' }}
           />
 
-          {heldPartId && (
+          {(draggedPartType || activeDragId) && (
             <div style={{
               position: 'absolute',
               bottom: '20px',
-              backgroundColor: 'rgba(239, 68, 68, 0.85)',
+              backgroundColor: '#10B981',
               padding: '6px 12px',
               borderRadius: '4px',
               fontSize: '12px',
-              color: '#FFF'
+              color: '#FFF',
+              fontWeight: 'bold'
             }}>
-              Holding Part. Click grid to snap place, right-click/escape to cancel.
+              Dragging Part... Release over the grid to snap place!
             </div>
           )}
         </div>

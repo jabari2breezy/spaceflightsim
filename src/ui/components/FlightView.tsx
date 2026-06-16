@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { CelestiaGame } from '../../core/game';
 import { drawPart2D, drawCelestialBody2D } from '../../utils/render2d';
 import { Vector3 } from '../../types';
+import { getPartGridSize } from '../screens/VABScreen';
 
 interface FlightViewProps {
   game: CelestiaGame;
@@ -269,8 +270,9 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
       // Staging loops
       sc.stages.forEach((stage) => {
         stage.parts.forEach((part) => {
-          const partW = part.dimensions.x * partScale;
-          const partH = part.dimensions.y * partScale;
+          const gSize = getPartGridSize(part.type);
+          const partW = gSize.w * partScale;
+          const partH = gSize.h * partScale;
 
           // Render physical part stacking
           const isSteeringLeft = keysPressed.current['a'] || keysPressed.current['arrowleft'];
