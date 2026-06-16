@@ -129,8 +129,8 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
       const centerBody = inMoonSOI ? moon : earth;
 
       // Draw Parallax Stars background
-      const camX = sc.position.x;
-      const camY = sc.position.y;
+      const camX = mapView ? centerBody.position.x : sc.position.x;
+      const camY = mapView ? centerBody.position.y : sc.position.y;
       stars.forEach((star) => {
         // Star screen position wrap-around based on camera coordinates
         const starX = (star.x * displayW - camX * 0.00002 * star.r) % displayW;
@@ -153,7 +153,7 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
       const centerX = displayW / 2;
       const centerY = displayH / 2;
 
-      // Translate coordinate space relative to camera focused on the rocket
+      // Translate coordinate space relative to camera
       const worldToScreenX = (wx: number) => centerX + (wx - camX) * viewScale;
       const worldToScreenY = (wy: number) => centerY - (wy - camY) * viewScale;
 
@@ -164,16 +164,18 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
       // If zoomed out, draw Earth orbit trajectory paths
       if (mapView) {
         // Moon Orbit around Earth
-        ctx.beginPath();
         const moonOrbRadius = 3.84e8 * viewScale;
-        const earthScreen = { x: worldToScreenX(earth.position.x), y: worldToScreenY(earth.position.y) };
-        ctx.arc(earthScreen.x, earthScreen.y, moonOrbRadius, 0, Math.PI * 2);
-        ctx.stroke();
+        if (!isNaN(moonOrbRadius) && moonOrbRadius > 0.1) {
+          ctx.beginPath();
+          const earthScreen = { x: worldToScreenX(earth.position.x), y: worldToScreenY(earth.position.y) };
+          ctx.arc(earthScreen.x, earthScreen.y, moonOrbRadius, 0, Math.PI * 2);
+          ctx.stroke();
 
-        // Draw Moon Orbit text label
-        ctx.fillStyle = '#10B981';
-        ctx.font = '10px sans-serif';
-        ctx.fillText('Moon Orbital Track', earthScreen.x + moonOrbRadius * 0.7, earthScreen.y - 10);
+          // Draw Moon Orbit text label
+          ctx.fillStyle = '#10B981';
+          ctx.font = '10px sans-serif';
+          ctx.fillText('Moon Orbital Track', earthScreen.x + moonOrbRadius * 0.7, earthScreen.y - 10);
+        }
       }
 
       // Draw current Spacecraft Orbit trajectory path
@@ -194,19 +196,22 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
         if (e < 1 && a > 0) {
           const b = a * Math.sqrt(1 - e * e);
           const focusOffset = a * e * viewScale;
-          const ellipseR = a * viewScale;
+          const rx = a * viewScale;
+          const ry = b * viewScale;
 
-          // Draw prediction circle/ellipse around dominant body center
-          ctx.ellipse(
-            bodyScreen.x - focusOffset,
-            bodyScreen.y,
-            a * viewScale,
-            b * viewScale,
-            0,
-            0,
-            Math.PI * 2
-          );
-          ctx.stroke();
+          if (!isNaN(rx) && !isNaN(ry) && rx > 0.1 && ry > 0.1 && !isNaN(focusOffset)) {
+            // Draw prediction circle/ellipse around dominant body center
+            ctx.ellipse(
+              bodyScreen.x - focusOffset,
+              bodyScreen.y,
+              rx,
+              ry,
+              0,
+              0,
+              Math.PI * 2
+            );
+            ctx.stroke();
+          }
 
           // Draw Apoapsis (Ap) and Periapsis (Pe) markers
           const apDist = orbitalInfo.orbit.apoApsis;

@@ -229,9 +229,11 @@ export function drawCelestialBody2D(
   screenY: number,
   radiusPx: number
 ): void {
-  ctx.save();
+  if (isNaN(radiusPx) || radiusPx <= 0.1 || isNaN(screenX) || isNaN(screenY)) return;
 
-  const grad = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, radiusPx);
+  ctx.save();
+  const safeRadius = Math.max(1.0, radiusPx);
+  const grad = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, safeRadius);
 
   if (body.id === 'earth') {
     grad.addColorStop(0, '#1E40AF'); // Deep Blue Core

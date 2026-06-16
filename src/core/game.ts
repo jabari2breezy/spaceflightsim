@@ -118,6 +118,49 @@ export class CelestiaGame {
   }
 
   /**
+   * Load spacecraft directly from built stage parts and initialize on Earth surface
+   */
+  loadSpacecraft(spacecraft: Spacecraft): void {
+    this.spacecraft = spacecraft;
+    this.simulationState.spacecraft = spacecraft;
+
+    const earthBody = this.bodies.get('earth');
+    if (earthBody) {
+      // Start sitting on Earth surface (just above radius)
+      const initialHeight = earthBody.radius + 15;
+      this.spacecraft.position = {
+        x: earthBody.position.x + initialHeight,
+        y: 0,
+        z: 0,
+      };
+
+      // Sitting stationary relative to surface
+      this.spacecraft.velocity = {
+        x: 0,
+        y: 0,
+        z: 0,
+      };
+
+      const initialState: PhysicsState = {
+        position: this.spacecraft.position,
+        velocity: this.spacecraft.velocity,
+        acceleration: { x: 0, y: 0, z: 0 },
+        rotation: this.spacecraft.rotation,
+        angularVelocity: this.spacecraft.angularVelocity,
+        mass: this.spacecraft.mass,
+        temperature: 288,
+      };
+
+      this.physicsEngine = new PhysicsEngine(initialState);
+
+      // Add all bodies to physics engine
+      for (const body of this.bodies.values()) {
+        this.physicsEngine.addBody(body);
+      }
+    }
+  }
+
+  /**
    * Start the simulation
    */
   start(): void {

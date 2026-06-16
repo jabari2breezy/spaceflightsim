@@ -30,12 +30,9 @@ const App: React.FC = () => {
     setCurrentScreen(screen);
   };
 
-  const handleBuildSpacecraft = (builder: SpacecraftBuilder) => {
+  const handleBuildSpacecraft = (sc: any) => {
     if (gameRef.current) {
-      gameRef.current.buildSpacecraft('My Rocket', (b) => {
-        // Pass the builder configuration from VAB
-        // This will be filled by the VAB component
-      });
+      gameRef.current.loadSpacecraft(sc);
     }
   };
 
