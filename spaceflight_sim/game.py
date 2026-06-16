@@ -1,9 +1,11 @@
+import asyncio
 import pygame
-from .config import WINDOW_WIDTH, WINDOW_HEIGHT, FPS, COLORS
+from .config import WINDOW_WIDTH, WINDOW_HEIGHT, FPS
 from .bodies import create_solar_system
 from .menu_screen import MenuScreen
 from .vab_screen import VABScreen
 from .flight_screen import FlightScreen
+
 
 class Game:
     def __init__(self):
@@ -57,7 +59,7 @@ class Game:
         elif value == 'flight':
             self.current_screen = self.flight_screen
 
-    def run(self):
+    async def run(self):
         while self.running:
             dt = self.clock.tick(FPS) / 1000.0
             dt = min(dt, 0.05)
@@ -72,5 +74,6 @@ class Game:
             self.current_screen.draw(self.screen)
 
             pygame.display.flip()
+            await asyncio.sleep(0)
 
         pygame.quit()
