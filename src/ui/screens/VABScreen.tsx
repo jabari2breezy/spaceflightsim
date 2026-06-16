@@ -15,6 +15,7 @@ interface VABScreenProps {
 
 const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
   const [spacecraft, setSpacecraft] = useState<SpacecraftBuilder | null>(null);
+  const [, forceUpdate] = useState(0);
   const [selectedStage, setSelectedStage] = useState<number>(0);
   const [spacecraftName, setSpacecraftName] = useState('Untitled Rocket');
 
@@ -27,7 +28,7 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
   const addPart = (partId: string) => {
     if (spacecraft) {
       spacecraft.addPartToStage(selectedStage, partId);
-      setSpacecraft({ ...spacecraft });
+      forceUpdate((n) => n + 1);
     }
   };
 
@@ -35,7 +36,7 @@ const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
     if (spacecraft) {
       spacecraft.addStage();
       setSelectedStage(spacecraft.build().stages.length - 1);
-      setSpacecraft({ ...spacecraft });
+      forceUpdate((n) => n + 1);
     }
   };
 

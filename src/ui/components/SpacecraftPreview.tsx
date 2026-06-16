@@ -1,7 +1,3 @@
-/**
- * Spacecraft Preview Component
- */
-
 import React, { useEffect, useRef } from 'react';
 import { Spacecraft } from '../../types';
 import * as BABYLON from '@babylonjs/core';
@@ -11,71 +7,71 @@ interface SpacecraftPreviewProps {
 }
 
 const SpacecraftPreview: React.FC<SpacecraftPreviewProps> = ({ spacecraft }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const engineRef = useRef<BABYLON.Engine | null>(null);
-  const sceneRef = useRef<BABYLON.Scene | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!canvasRef.current) return;
 
-    // Create Babylon.js scene
-    const engine = new BABYLON.Engine(containerRef.current, true);
+    const canvas = canvasRef.current;
+    const engine = new BABYLON.Engine(canvas, true);
     const scene = new BABYLON.Scene(engine);
-    
-    engineRef.current = engine;
-    sceneRef.current = scene;
+    scene.clearColor = new BABYLON.Color4(0.05, 0.05, 0.1, 1);
 
-    // Camera
     const camera = new BABYLON.ArcRotateCamera(
-      'camera',
+      'cam',
       Math.PI / 2,
       Math.PI / 2.5,
-      50,
+      15,
       BABYLON.Vector3.Zero(),
       scene
     );
-    camera.attachControl(containerRef.current, true);
+    camera.attachControl(canvas, true);
+    camera.lowerRadiusLimit = 5;
+    camera.upperRadiusLimit = 50;
 
-    // Lighting
-    const light = new BABYLON.HemisphericLight('light', new BABYLON.Vector3(0, 1, 0), scene);
-    light.intensity = 0.7;
+    const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
+    hemi.intensity = 0.6;
+    hemi.diffuse = new BABYLON.Color3(0.8, 0.8, 1);
 
-    const pointLight = new BABYLON.PointLight('pointLight', new BABYLON.Vector3(10, 10, 10), scene);
-    pointLight.intensity = 0.5;
+    const dir = new BABYLON.DirectionalLight('dir', new BABYLON.Vector3(1, -0.5, 0), scene);
+    dir.intensity = 0.8;
 
-    // Draw spacecraft stages
     let yOffset = 0;
-    spacecraft.stages.forEach((stage, stageIdx) => {
-      const stageHeight = 2;
-      const box = BABYLON.MeshBuilder.CreateBox(
-        `stage-${stageIdx}`,
-        { height: stageHeight, width: 1, depth: 1 },
+    spacecraft.stages.forEach((stage, idx) => {
+      const stageHeight = Math.max(2, stage.parts.length * 2);
+
+      const body = BABYLON.MeshBuilder.CreateCylinder(
+        `preview-stage-${idx}`,
+        { height: stageHeight, diameter: 2, tessellation: 16 },
         scene
       );
-      box.position.y = yOffset;
+      body.position.y = -yOffset - stageHeight / 2;
 
-      // Color by stage
-      const material = new BABYLON.StandardMaterial(`mat-${stageIdx}`, scene);
-      material.diffuse = new BABYLON.Color3(
-        stageIdx / spacecraft.stages.length,
-        0.5,
-        1 - stageIdx / spacecraft.stages.length
-      );
-      box.material = material;
+      const mat = new BABYLON.PBRMetallicRoughnessMaterial(`preview-mat-${idx}`, scene);
+      const t = idx / Math.max(1, spacecraft.stages.length);
+      mat.baseColor = new BABYLON.Color3(0.3 + t * 0.4, 0.5, 0.8 - t * 0.5);
+      mat.metallic = 0.6;
+      mat.roughness = 0.3;
+      body.material = mat;
 
-      yOffset += stageHeight + 0.5;
+      yOffset += stageHeight + 0.3;
     });
 
-    // Render loop
-    engine.runRenderLoop(() => {
-      scene.render();
-    });
+    const nose = BABYLON.MeshBuilder.CreateCylinder(
+      'preview-nose',
+      { height: 2, diameterTop: 0.05, diameterBottom: 2, tessellation: 16 },
+      scene
+    );
+    nose.position.y = -yOffset - 1;
+    const noseMat = new BABYLON.PBRMetallicRoughnessMaterial('preview-nose-mat', scene);
+    noseMat.baseColor = new BABYLON.Color3(0.9, 0.15, 0.15);
+    noseMat.metallic = 0.3;
+    noseMat.roughness = 0.4;
+    nose.material = noseMat;
 
-    // Handle window resize
-    const handleResize = () => {
-      engine.resize();
-    };
+    engine.runRenderLoop(() => scene.render());
 
+    const handleResize = () => engine.resize();
     window.addEventListener('resize', handleResize);
 
     return () => {
@@ -88,7 +84,7 @@ const SpacecraftPreview: React.FC<SpacecraftPreviewProps> = ({ spacecraft }) => 
   return (
     <div className="spacecraft-preview">
       <h3>Vehicle Preview</h3>
-      <div ref={containerRef} className="preview-container" />
+      <canvas ref={canvasRef} className="preview-canvas" />
     </div>
   );
 };
