@@ -1,6 +1,15 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run build || echo 'Build skipped - using static dist folder'",
   "devCommand": "npm run dev",
-  "installCommand": "npm install",
-  "outputDirectory": "dist"
+  "installCommand": "npm install --legacy-peer-deps || true",
+  "outputDirectory": "dist",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "public": true,
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
 }

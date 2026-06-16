@@ -1,5 +1,4 @@
 node_modules/
-dist/
 build/
 .DS_Store
 *.log
@@ -16,3 +15,7 @@ build/
 coverage/
 *.min.js
 *.min.css
+dist/*.js
+dist/*.map
+dist/*.bundle*
+!dist/index.html

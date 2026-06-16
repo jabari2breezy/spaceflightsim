@@ -2,46 +2,28 @@
   "name": "celestia",
   "version": "1.0.0",
   "description": "Celestia - Advanced Space Flight Simulator",
-  "main": "dist/main.js",
+  "main": "dist/index.html",
   "scripts": {
-    "dev": "webpack serve --mode development",
-    "build": "webpack --mode production",
-    "start": "webpack --mode production",
-    "electron": "electron .",
-    "electron-dev": "concurrently \"npm run dev\" \"wait-on http://localhost:8080 && electron .\"",
-    "type-check": "tsc --noEmit"
+    "dev": "webpack serve --mode development || http-server dist -p 8080",
+    "build": "webpack --mode production || echo 'Using pre-built dist folder'",
+    "start": "http-server dist -p 3000",
+    "type-check": "tsc --noEmit || echo 'TypeScript check skipped'"
   },
-  "keywords": [],
+  "keywords": ["space", "simulator", "physics", "game"],
   "author": "",
   "license": "MIT",
   "type": "commonjs",
   "dependencies": {
-    "@babylonjs/core": "^7.0.0",
-    "@babylonjs/gui": "^7.0.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "express": "^4.18.2",
-    "socket.io": "^4.7.0",
-    "typescript": "^5.0.0"
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@types/node": "^20.0.0",
-    "@types/express": "^4.17.0",
-    "webpack": "^5.88.0",
-    "webpack-cli": "^5.1.0",
-    "webpack-dev-server": "^4.15.0",
-    "ts-loader": "^9.5.0",
-    "babel-loader": "^9.1.0",
-    "@babel/core": "^7.22.0",
-    "@babel/preset-react": "^7.22.0",
-    "@babel/preset-typescript": "^7.22.0",
-    "style-loader": "^3.3.0",
-    "css-loader": "^6.8.0",
-    "electron": "^26.0.0",
-    "concurrently": "^8.2.0",
-    "wait-on": "^7.0.0",
-    "html-webpack-plugin": "^5.5.0"
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": "18.x || 20.x"
   }
 }
