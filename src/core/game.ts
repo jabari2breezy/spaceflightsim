@@ -5,6 +5,7 @@
 import { PhysicsEngine } from '../physics/engine';
 import { SpacecraftBuilder, PARTS_LIBRARY } from './spacecraft';
 import { createSolarSystem, createStarterSystem, getAltitude } from './bodies';
+import { MoonGuidance } from '../physics/guidance';
 import {
   SimulationState,
   PhysicsState,
@@ -22,6 +23,13 @@ export class CelestiaGame {
   private missions: Mission[] = [];
   private isRunning = false;
   private lastFrameTime = 0;
+
+  public throttle = 0; // 0 to 100
+  public pitchAngle = 90; // degrees
+  public unlimitedFuel = false;
+  public autopilotActive = false;
+  public guidance: MoonGuidance = new MoonGuidance();
+  public autopilotMessage = 'Autopilot offline';
 
   constructor(systemType: 'starter' | 'full' = 'starter') {
     // Initialize celestial bodies
@@ -150,14 +158,70 @@ export class CelestiaGame {
     // Apply time scale
     const scaledDeltaTime = deltaTime * this.simulationState.timeScale;
 
-    // Update physics
-    this.physicsEngine.update(scaledDeltaTime);
+    // Compute autopilot step if enabled
+    let currentThrottle = this.throttle;
+    let targetPitch = this.pitchAngle; // in degrees
+    
+    if (this.autopilotActive && this.guidance) {
+      const autoOut = this.guidance.update(this, currentThrottle);
+      this.throttle = autoOut.throttle;
+      this.pitchAngle = autoOut.pitch;
+      this.autopilotMessage = autoOut.statusMessage;
+      if (autoOut.stageRequired) {
+        this.triggerStage();
+      }
+      currentThrottle = this.throttle;
+      targetPitch = this.pitchAngle;
+    }
+
+    // Calculate active thrust vector in 2D (along the pitch angle)
+    const rad = (targetPitch * Math.PI) / 180;
+    const maxThrust = this.getSpacecraftThrust();
+    
+    // Check fuel levels
+    const totalFuelLeft = this.getSpacecraftFuel();
+    let thrustMag = maxThrust * (currentThrottle / 100);
+
+    if (totalFuelLeft <= 0 && !this.unlimitedFuel) {
+      thrustMag = 0; // Out of fuel
+    }
+
+    // Consume fuel if not unlimited
+    if (thrustMag > 0 && !this.unlimitedFuel && this.spacecraft) {
+      const isp = 300; // Average ISP
+      const fuelFlow = thrustMag / (isp * 9.81); // kg/s
+      this.consumeFuel(fuelFlow * scaledDeltaTime);
+    }
+
+    if (this.spacecraft && this.physicsEngine) {
+      let currentMass = 0;
+      for (const stage of this.spacecraft.stages) {
+        for (const part of stage.parts) {
+          currentMass += part.dryMass;
+          if (part.type === 'tank') {
+            currentMass += part.properties.fuelLeft ?? part.properties.capacity ?? 0;
+          }
+        }
+      }
+      this.spacecraft.mass = currentMass;
+      this.physicsEngine.setState({ mass: currentMass });
+    }
+
+    const thrustVector = {
+      x: Math.cos(rad) * thrustMag,
+      y: Math.sin(rad) * thrustMag,
+      z: 0,
+    };
+
+    // Update physics with thrust force
+    this.physicsEngine.update(scaledDeltaTime, thrustVector);
 
     // Update spacecraft state from physics engine
     if (this.spacecraft) {
       const physicsState = this.physicsEngine.getState();
       this.spacecraft.position = physicsState.position;
       this.spacecraft.velocity = physicsState.velocity;
+      this.spacecraft.rotation = { x: 0, y: 0, z: rad };
       this.simulationState.spacecraft = this.spacecraft;
     }
 
@@ -354,5 +418,65 @@ export class CelestiaGame {
     }
 
     return totalDeltaV;
+  }
+
+  /**
+   * Get total spacecraft fuel mass
+   */
+  getSpacecraftFuel(): number {
+    if (!this.spacecraft) return 0;
+    let totalFuel = 0;
+    for (const stage of this.spacecraft.stages) {
+      for (const part of stage.parts) {
+        if (part.type === 'tank') {
+          if (part.properties.fuelLeft === undefined) {
+            part.properties.fuelLeft = part.properties.capacity || 10000;
+          }
+          totalFuel += part.properties.fuelLeft;
+        }
+      }
+    }
+    return totalFuel;
+  }
+
+  /**
+   * Consume fuel from active tanks
+   */
+  consumeFuel(amount: number): void {
+    if (!this.spacecraft) return;
+    let needed = amount;
+    for (const stage of this.spacecraft.stages) {
+      for (const part of stage.parts) {
+        if (part.type === 'tank') {
+          if (part.properties.fuelLeft === undefined) {
+            part.properties.fuelLeft = part.properties.capacity || 10000;
+          }
+          const fuel = part.properties.fuelLeft;
+          if (fuel > 0) {
+            const consumed = Math.min(fuel, needed);
+            part.properties.fuelLeft -= consumed;
+            needed -= consumed;
+            if (needed <= 0) return;
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Trigger next stage
+   */
+  triggerStage(): boolean {
+    if (!this.spacecraft || this.spacecraft.stages.length <= 1) return false;
+    // Remove the bottom stage
+    this.spacecraft.stages.shift();
+    if (this.physicsEngine) {
+      const state = this.physicsEngine.getState();
+      state.mass = this.spacecraft.stages.reduce((m, stage) => {
+        return m + stage.parts.reduce((pm, p) => pm + p.dryMass + (p.type === 'tank' ? (p.properties.fuelLeft ?? p.properties.capacity ?? 10000) : 0), 0);
+      }, 0);
+      this.physicsEngine.setState({ mass: state.mass });
+    }
+    return true;
   }
 }

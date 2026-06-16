@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Spacecraft } from '../../types';
-import * as BABYLON from '@babylonjs/core';
+import { drawPart2D } from '../../utils/render2d';
 
 interface SpacecraftPreviewProps {
   spacecraft: Spacecraft;
@@ -13,78 +13,100 @@ const SpacecraftPreview: React.FC<SpacecraftPreviewProps> = ({ spacecraft }) => 
     if (!canvasRef.current) return;
 
     const canvas = canvasRef.current;
-    const engine = new BABYLON.Engine(canvas, true);
-    const scene = new BABYLON.Scene(engine);
-    scene.clearColor = new BABYLON.Color4(0.05, 0.05, 0.1, 1);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-    const camera = new BABYLON.ArcRotateCamera(
-      'cam',
-      Math.PI / 2,
-      Math.PI / 2.5,
-      15,
-      BABYLON.Vector3.Zero(),
-      scene
-    );
-    camera.attachControl(canvas, true);
-    camera.lowerRadiusLimit = 5;
-    camera.upperRadiusLimit = 50;
+    // Set high resolution display backing
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
 
-    const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
-    hemi.intensity = 0.6;
-    hemi.diffuse = new BABYLON.Color3(0.8, 0.8, 1);
+    const w = rect.width;
+    const h = rect.height;
 
-    const dir = new BABYLON.DirectionalLight('dir', new BABYLON.Vector3(1, -0.5, 0), scene);
-    dir.intensity = 0.8;
+    let animFrameId = 0;
 
-    let yOffset = 0;
-    spacecraft.stages.forEach((stage, idx) => {
-      const stageHeight = Math.max(2, stage.parts.length * 2);
+    const render = () => {
+      // Clear screen
+      ctx.fillStyle = '#0B0D17';
+      ctx.fillRect(0, 0, w, h);
 
-      const body = BABYLON.MeshBuilder.CreateCylinder(
-        `preview-stage-${idx}`,
-        { height: stageHeight, diameter: 2, tessellation: 16 },
-        scene
-      );
-      body.position.y = -yOffset - stageHeight / 2;
+      // Draw VAB building guidelines grid
+      ctx.strokeStyle = '#1E293B';
+      ctx.lineWidth = 1;
+      const gridSize = 20;
+      for (let x = 0; x < w; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+      for (let y = 0; y < h; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
 
-      const mat = new BABYLON.PBRMetallicRoughnessMaterial(`preview-mat-${idx}`, scene);
-      const t = idx / Math.max(1, spacecraft.stages.length);
-      mat.baseColor = new BABYLON.Color3(0.3 + t * 0.4, 0.5, 0.8 - t * 0.5);
-      mat.metallic = 0.6;
-      mat.roughness = 0.3;
-      body.material = mat;
+      // Calculate total height of all parts
+      let totalPartHeight = 0;
+      spacecraft.stages.forEach((stage) => {
+        stage.parts.forEach((part) => {
+          totalPartHeight += part.dimensions.y;
+        });
+        // Add interstage gaps
+        totalPartHeight += 0.5;
+      });
 
-      yOffset += stageHeight + 0.3;
-    });
+      // Fit layout scale
+      const scale = Math.min(25, (h * 0.75) / Math.max(1, totalPartHeight));
+      const centerX = w / 2;
+      
+      // Start drawing from bottom up
+      let currentY = h * 0.85;
 
-    const nose = BABYLON.MeshBuilder.CreateCylinder(
-      'preview-nose',
-      { height: 2, diameterTop: 0.05, diameterBottom: 2, tessellation: 16 },
-      scene
-    );
-    nose.position.y = -yOffset - 1;
-    const noseMat = new BABYLON.PBRMetallicRoughnessMaterial('preview-nose-mat', scene);
-    noseMat.baseColor = new BABYLON.Color3(0.9, 0.15, 0.15);
-    noseMat.metallic = 0.3;
-    noseMat.roughness = 0.4;
-    nose.material = noseMat;
+      // Draw stages in reverse order (bottom first)
+      for (let sIdx = spacecraft.stages.length - 1; sIdx >= 0; sIdx--) {
+        const stage = spacecraft.stages[sIdx];
+        
+        // Draw parts inside this stage
+        for (let pIdx = stage.parts.length - 1; pIdx >= 0; pIdx--) {
+          const part = stage.parts[pIdx];
+          const partW = part.dimensions.x * scale;
+          const partH = part.dimensions.y * scale;
 
-    engine.runRenderLoop(() => scene.render());
+          // Draw part
+          drawPart2D(ctx, part, centerX, currentY - partH / 2, partW, partH);
 
-    const handleResize = () => engine.resize();
-    window.addEventListener('resize', handleResize);
+          // Render RCS indicator alignment
+          if (part.type === 'rcs') {
+            drawPart2D(ctx, part, centerX - partW * 0.6, currentY - partH / 2, partW * 0.5, partH * 0.5, 'left');
+            drawPart2D(ctx, part, centerX + partW * 0.6, currentY - partH / 2, partW * 0.5, partH * 0.5, 'right');
+          }
+
+          currentY -= partH;
+        }
+
+        // Add spacer for stage decoupling
+        currentY -= 0.5 * scale;
+      }
+
+      animFrameId = requestAnimationFrame(render);
+    };
+
+    render();
 
     return () => {
-      window.removeEventListener('resize', handleResize);
-      scene.dispose();
-      engine.dispose();
+      cancelAnimationFrame(animFrameId);
     };
   }, [spacecraft]);
 
   return (
     <div className="spacecraft-preview">
       <h3>Vehicle Preview</h3>
-      <canvas ref={canvasRef} className="preview-canvas" />
+      <canvas ref={canvasRef} className="preview-canvas" style={{ width: '100%', height: '100%', display: 'block' }} />
     </div>
   );
 };
