@@ -22,125 +22,103 @@ interface FlightViewProps {
 
 const PX_PER_M = 1 / 500;
 
-function worldToScreen(
-  wx: number, wy: number,
-  camX: number, camY: number,
-  zoom: number,
-  w: number, h: number
-): { x: number; y: number } {
+function worldToScreen(wx: number, wy: number, camX: number, camY: number, zoom: number, w: number, h: number) {
   const scale = PX_PER_M * zoom;
-  return {
-    x: (wx - camX) * scale + w / 2,
-    y: -(wy - camY) * scale + h / 2,
-  };
+  return { x: (wx - camX) * scale + w / 2, y: -(wy - camY) * scale + h / 2 };
 }
 
-function drawGround(g: PIXI.Graphics, camX: number, camY: number, zoom: number, w: number, h: number, simTime: number) {
-  const groundY = -(EARTH_RADIUS);
-  const groundScreen = worldToScreen(0, groundY, camX, camY, zoom, w, h);
+function drawGround(container: PIXI.Container, camX: number, camY: number, zoom: number, w: number, h: number, simTime: number) {
+  const groundScreen = worldToScreen(0, -EARTH_RADIUS, camX, camY, zoom, w, h);
+  const horizonScreen = worldToScreen(0, 0, camX, camY, zoom, w, h);
 
-  if (groundScreen.y > h + 100) return;
-
-  const horizonY = worldToScreen(0, 0, camX, camY, zoom, w, h).y;
+  if (groundScreen.y > h + 50) return;
 
   // Sky gradient
-  const skyGrad = new PIXI.Graphics();
-  const skyTop = 0;
-  const skyBottom = Math.min(horizonY, h);
-
-  if (skyBottom > skyTop) {
-    const steps = 20;
+  const skyG = new PIXI.Graphics();
+  const horizonY = Math.min(horizonScreen.y, h);
+  if (horizonY > 0) {
+    const steps = 15;
     for (let i = 0; i < steps; i++) {
       const t = i / steps;
-      const y1 = skyTop + (skyBottom - skyTop) * t;
-      const y2 = skyTop + (skyBottom - skyTop) * (t + 1 / steps);
-      const altitudeFactor = 1 - t;
-      const r = Math.floor(10 + altitudeFactor * 20);
-      const gv = Math.floor(20 + altitudeFactor * 50);
-      const b = Math.floor(60 + altitudeFactor * 120);
-      const color = (r << 16) | (gv << 8) | b;
-      skyGrad.beginFill(color, 0.9);
-      skyGrad.drawRect(0, y1, w, y2 - y1 + 1);
-      skyGrad.endFill();
+      const y1 = (horizonY * t);
+      const y2 = (horizonY * (t + 1 / steps));
+      const alt = 1 - t;
+      const r = Math.floor(8 + alt * 15);
+      const gv = Math.floor(15 + alt * 40);
+      const b = Math.floor(50 + alt * 100);
+      skyG.beginFill((r << 16) | (gv << 8) | b);
+      skyG.drawRect(0, y1, w, y2 - y1 + 1);
+      skyG.endFill();
     }
   }
-  g.addChild(skyGrad);
+  container.addChild(skyG);
 
   // Ground
   if (groundScreen.y < h) {
-    // Dirt layer
-    const dirtGrad = new PIXI.Graphics();
-    const dirtTop = groundScreen.y;
-    const dirtBottom = h;
-    const dirtSteps = 10;
+    const dirtG = new PIXI.Graphics();
+    const dirtTop = Math.max(0, groundScreen.y);
+    const dirtBot = h;
+    const dirtSteps = 8;
     for (let i = 0; i < dirtSteps; i++) {
       const t = i / dirtSteps;
-      const y1 = dirtTop + (dirtBottom - dirtTop) * t;
-      const y2 = dirtTop + (dirtBottom - dirtTop) * (t + 1 / dirtSteps);
+      const y1 = dirtTop + (dirtBot - dirtTop) * t;
+      const y2 = dirtTop + (dirtBot - dirtTop) * (t + 1 / dirtSteps);
       const depth = t;
-      const r = Math.floor(60 + depth * 40);
-      const gv = Math.floor(100 - depth * 30);
-      const b = Math.floor(40 - depth * 20);
-      const color = (r << 16) | (gv << 8) | b;
-      dirtGrad.beginFill(color, 1);
-      dirtGrad.drawRect(0, y1, w, y2 - y1 + 1);
-      dirtGrad.endFill();
+      const r = Math.floor(55 + depth * 35);
+      const gv = Math.floor(90 - depth * 25);
+      const b = Math.floor(35 - depth * 15);
+      dirtG.beginFill((r << 16) | (gv << 8) | b);
+      dirtG.drawRect(0, y1, w, y2 - y1 + 1);
+      dirtG.endFill();
     }
-    g.addChild(dirtGrad);
+    container.addChild(dirtG);
 
-    // Grass blades
+    // Grass
     const grassG = new PIXI.Graphics();
-    const grassCount = Math.min(200, Math.floor(w / 3));
-    const grassBaseY = groundScreen.y;
-
+    const grassCount = Math.min(300, Math.floor(w / 2));
     for (let i = 0; i < grassCount; i++) {
       const x = (i / grassCount) * w;
-      const grassHeight = 4 + Math.random() * 8;
-      const sway = Math.sin(simTime * 2 + i * 0.3) * 2;
-      const shade = 0.3 + Math.random() * 0.4;
-      const r = Math.floor(shade * 40);
-      const gv = Math.floor(120 + shade * 80);
-      const b = Math.floor(shade * 30);
-      const color = (r << 16) | (gv << 8) | b;
-
-      grassG.lineStyle(1.5, color, 0.9);
-      grassG.moveTo(x, grassBaseY);
-      grassG.lineTo(x + sway, grassBaseY - grassHeight);
+      const h2 = 3 + Math.sin(i * 7.3 + simTime * 2.5) * 3 + Math.sin(i * 13.1) * 2;
+      const shade = 0.3 + Math.abs(Math.sin(i * 3.7)) * 0.4;
+      const r = Math.floor(shade * 35);
+      const gv = Math.floor(110 + shade * 70);
+      const b = Math.floor(shade * 25);
+      grassG.lineStyle(1.5 + Math.random() * 0.5, (r << 16) | (gv << 8) | b, 0.85);
+      const sway = Math.sin(simTime * 2 + i * 0.4) * 1.5;
+      grassG.moveTo(x, dirtTop);
+      grassG.lineTo(x + sway, dirtTop - h2);
     }
-    g.addChild(grassG);
+    container.addChild(grassG);
   }
 }
 
-function drawStars(g: PIXI.Graphics, camX: number, camY: number, zoom: number, w: number, h: number, simTime: number) {
+function drawStars(g: PIXI.Graphics, camX: number, camY: number, w: number, h: number, simTime: number) {
   const layers = [
-    { count: 150, parallax: 0.00005, minSize: 0.3, maxSize: 1.0, alpha: 0.4 },
-    { count: 100, parallax: 0.0001, minSize: 0.5, maxSize: 1.5, alpha: 0.5 },
-    { count: 50, parallax: 0.0002, minSize: 1.0, maxSize: 2.5, alpha: 0.6 },
-    { count: 20, parallax: 0.0004, minSize: 1.5, maxSize: 3.0, alpha: 0.7 },
+    { count: 200, parallax: 0.00003, minSize: 0.3, maxSize: 0.8, alpha: 0.35 },
+    { count: 120, parallax: 0.00008, minSize: 0.5, maxSize: 1.2, alpha: 0.45 },
+    { count: 60, parallax: 0.00015, minSize: 0.8, maxSize: 2.0, alpha: 0.55 },
+    { count: 25, parallax: 0.0003, minSize: 1.2, maxSize: 2.8, alpha: 0.65 },
   ];
 
   layers.forEach((layer) => {
     for (let i = 0; i < layer.count; i++) {
-      const seed = i * 137.5 + layer.parallax * 10000;
-      const sx = ((seed * 7.13) % 2000 - 1000) * 1000;
-      const sy = ((seed * 11.71) % 2000 - 1000) * 1000;
-      const twinkle = 0.5 + 0.5 * Math.sin(simTime * 3 + seed);
-      const size = layer.minSize + (layer.maxSize - layer.minSize) * ((seed * 3.17) % 1);
-      const px = sx - camX * layer.parallax;
-      const py = sy - camY * layer.parallax;
+      const seed = i * 137.508 + layer.parallax * 50000;
+      const bx = ((seed * 7.13) % 2000 - 1000) * 800;
+      const by = ((seed * 11.71) % 2000 - 1000) * 800;
+      const px = bx - camX * layer.parallax;
+      const py = by - camY * layer.parallax;
       const ss = worldToScreen(px, py, 0, 0, 1, w, h);
+      if (ss.x < -5 || ss.x > w + 5 || ss.y < -5 || ss.y > h + 5) continue;
 
-      if (ss.x > -10 && ss.x < w + 10 && ss.y > -10 && ss.y < h + 10) {
-        const alpha = layer.alpha * twinkle;
-        const colorVal = 0.7 + 0.3 * ((seed * 5.31) % 1);
-        const r = Math.floor(255 * colorVal);
-        const gv = Math.floor(255 * (0.8 + 0.2 * colorVal));
-        const b = Math.floor(255);
-        const color = (r << 16) | (gv << 8) | b;
-        g.beginFill(color, alpha);
-        g.drawCircle(ss.x, ss.y, Math.max(size, 0.5));
-        g.endFill();
-      }
+      const twinkle = 0.5 + 0.5 * Math.sin(simTime * (2 + (seed % 3)) + seed);
+      const size = layer.minSize + (layer.maxSize - layer.minSize) * ((seed * 3.17) % 1);
+      const colorTemp = (seed * 5.31) % 1;
+      const r = Math.floor(200 + colorTemp * 55);
+      const gv = Math.floor(210 + colorTemp * 45);
+      const b = 255;
+      g.beginFill((r << 16) | (gv << 8) | b, layer.alpha * twinkle);
+      g.drawCircle(ss.x, ss.y, Math.max(size, 0.3));
+      g.endFill();
     }
   });
 }
@@ -148,117 +126,74 @@ function drawStars(g: PIXI.Graphics, camX: number, camY: number, zoom: number, w
 function drawEarth(g: PIXI.Graphics, camX: number, camY: number, zoom: number, w: number, h: number) {
   const s = worldToScreen(0, 0, camX, camY, zoom, w, h);
   const r = EARTH_RADIUS * PX_PER_M * zoom;
-
   if (r < 2) return;
 
   // Atmosphere glow
-  g.beginFill(0x4488cc, 0.03);
-  g.drawCircle(s.x, s.y, r * 1.3);
-  g.endFill();
-
-  g.beginFill(0x4488cc, 0.06);
-  g.drawCircle(s.x, s.y, r * 1.15);
-  g.endFill();
-
-  // Earth body
-  g.beginFill(0x1a6b9e);
-  g.drawCircle(s.x, s.y, r);
-  g.endFill();
-
-  // Land patches
-  const landG = new PIXI.Graphics();
-  for (let i = 0; i < 8; i++) {
-    const angle = (i / 8) * Math.PI * 2;
-    const dist = r * (0.3 + 0.4 * ((i * 7.13) % 1));
-    const patchR = r * (0.1 + 0.15 * ((i * 3.71) % 1));
-    const px = s.x + Math.cos(angle) * dist;
-    const py = s.y + Math.sin(angle) * dist;
-    landG.beginFill(0x2d8c5e, 0.6);
-    landG.drawCircle(px, py, patchR);
-    landG.endFill();
+  g.beginFill(0x4488cc, 0.025); g.drawCircle(s.x, s.y, r * 1.4); g.endFill();
+  g.beginFill(0x4488cc, 0.05); g.drawCircle(s.x, s.y, r * 1.2); g.endFill();
+  // Body
+  g.beginFill(0x1a6b9e); g.drawCircle(s.x, s.y, r); g.endFill();
+  // Land
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    const d = r * (0.25 + 0.35 * ((i * 7.13) % 1));
+    const pr = r * (0.08 + 0.12 * ((i * 3.71) % 1));
+    g.beginFill(0x2d8c5e, 0.55);
+    g.drawCircle(s.x + Math.cos(a) * d, s.y + Math.sin(a) * d, pr);
+    g.endFill();
   }
-  g.addChild(landG);
 }
 
-function drawMoon(g: PIXI.Graphics, moonX: number, moonY: number, camX: number, camY: number, zoom: number, w: number, h: number) {
-  const s = worldToScreen(moonX, moonY, camX, camY, zoom, w, h);
+function drawMoonBody(g: PIXI.Graphics, mx: number, my: number, camX: number, camY: number, zoom: number, w: number, h: number) {
+  const s = worldToScreen(mx, my, camX, camY, zoom, w, h);
   const r = MOON_RADIUS * PX_PER_M * zoom;
-
   if (r < 2) return;
 
-  // Moon body
-  g.beginFill(0x888888);
-  g.drawCircle(s.x, s.y, r);
-  g.endFill();
+  g.beginFill(0x888888); g.drawCircle(s.x, s.y, r); g.endFill();
 
-  // Craters
   const craters = [
-    { angle: 0.3, dist: 0.4, size: 0.15 },
-    { angle: 1.2, dist: 0.3, size: 0.12 },
-    { angle: 2.1, dist: 0.5, size: 0.18 },
-    { angle: 3.0, dist: 0.2, size: 0.1 },
-    { angle: 3.8, dist: 0.6, size: 0.2 },
-    { angle: 4.5, dist: 0.35, size: 0.14 },
-    { angle: 5.2, dist: 0.45, size: 0.16 },
+    { a: 0.3, d: 0.35, s: 0.14 }, { a: 1.1, d: 0.5, s: 0.18 }, { a: 2.0, d: 0.25, s: 0.1 },
+    { a: 2.8, d: 0.55, s: 0.2 }, { a: 3.5, d: 0.4, s: 0.12 }, { a: 4.2, d: 0.3, s: 0.16 },
+    { a: 5.0, d: 0.45, s: 0.15 }, { a: 5.8, d: 0.2, s: 0.09 },
   ];
-
   craters.forEach((c) => {
-    const cx = s.x + Math.cos(c.angle) * r * c.dist;
-    const cy = s.y + Math.sin(c.angle) * r * c.dist;
-    const cr = r * c.size;
-
-    g.beginFill(0x666666, 0.5);
-    g.drawCircle(cx, cy, cr);
-    g.endFill();
-
-    g.beginFill(0x777777, 0.3);
-    g.drawCircle(cx - cr * 0.2, cy - cr * 0.2, cr * 0.6);
-    g.endFill();
+    const cx = s.x + Math.cos(c.a) * r * c.d;
+    const cy = s.y + Math.sin(c.a) * r * c.d;
+    const cr = r * c.s;
+    g.beginFill(0x666666, 0.5); g.drawCircle(cx, cy, cr); g.endFill();
+    g.beginFill(0x777777, 0.3); g.drawCircle(cx - cr * 0.2, cy - cr * 0.15, cr * 0.6); g.endFill();
   });
 }
 
-function drawRocket(
-  g: PIXI.Graphics,
-  rx: number, ry: number, angle: number,
-  camX: number, camY: number,
-  zoom: number,
-  w: number, h: number,
-  stage: number, totalStages: number
-) {
+function drawRocket(g: PIXI.Graphics, rx: number, ry: number, angle: number, camX: number, camY: number, zoom: number, w: number, h: number, stage: number, totalStages: number) {
   const s = worldToScreen(rx, ry, camX, camY, zoom, w, h);
   const scale = PX_PER_M * zoom;
-  const rocketLen = Math.max(40, 80 * Math.max(scale, 0.3));
-  const rocketW = Math.max(10, 16 * Math.max(scale, 0.3));
+  const len = Math.max(50, 90 * Math.max(scale, 0.2));
+  const wd = Math.max(12, 18 * Math.max(scale, 0.2));
 
   const cosA = Math.cos(Math.PI / 2 - angle);
   const sinA = Math.sin(Math.PI / 2 - angle);
 
-  const noseH = rocketLen * 0.35;
-  const bodyLen = rocketLen * 0.65;
-  const hw = rocketW / 2;
+  const noseH = len * 0.3;
+  const bodyLen = len * 0.7;
+  const hw = wd / 2;
   const hl = bodyLen / 2;
 
-  // Body stages with colors
+  // Stages
   const stageColors = [0xcc3333, 0xdddddd, 0x3366cc];
-  const bandColors = [0xaa2222, 0xbbbbbb, 0x2255aa];
+  const bandColors = [0x992222, 0xbbbbbb, 0x2244aa];
+  const frac = 1 / totalStages;
 
   for (let i = 0; i < totalStages; i++) {
-    const stageFrac = 1 / totalStages;
-    const stageTop = -hl + bodyLen * i * stageFrac;
-    const stageBot = -hl + bodyLen * (i + 1) * stageFrac;
-    const color = i === stage ? stageColors[i % 3] : stageColors[i % 3];
+    const top = -hl + bodyLen * i * frac;
+    const bot = -hl + bodyLen * (i + 1) * frac;
+    const col = stageColors[i % 3];
 
     const pts = [
-      { x: -hw, y: stageTop },
-      { x: hw, y: stageTop },
-      { x: hw, y: stageBot },
-      { x: -hw, y: stageBot },
-    ].map((p) => ({
-      x: s.x + p.x * cosA - p.y * sinA,
-      y: s.y + p.x * sinA + p.y * cosA,
-    }));
+      { x: -hw, y: top }, { x: hw, y: top }, { x: hw, y: bot }, { x: -hw, y: bot },
+    ].map((p) => ({ x: s.x + p.x * cosA - p.y * sinA, y: s.y + p.x * sinA + p.y * cosA }));
 
-    g.beginFill(color);
+    g.beginFill(col);
     g.moveTo(pts[0].x, pts[0].y);
     pts.forEach((p) => g.lineTo(p.x, p.y));
     g.closePath();
@@ -266,59 +201,37 @@ function drawRocket(
 
     // Band
     if (i < totalStages - 1) {
-      const bandY = stageBot;
-      const bandH = 3;
-      const bandPts = [
-        { x: -hw, y: bandY - bandH },
-        { x: hw, y: bandY - bandH },
-        { x: hw, y: bandY + bandH },
-        { x: -hw, y: bandY + bandH },
-      ].map((p) => ({
-        x: s.x + p.x * cosA - p.y * sinA,
-        y: s.y + p.x * sinA + p.y * cosA,
-      }));
-
+      const by = bot;
+      const bh = 2;
+      const bp = [
+        { x: -hw, y: by - bh }, { x: hw, y: by - bh }, { x: hw, y: by + bh }, { x: -hw, y: by + bh },
+      ].map((p) => ({ x: s.x + p.x * cosA - p.y * sinA, y: s.y + p.x * sinA + p.y * cosA }));
       g.beginFill(bandColors[i % 3]);
-      g.moveTo(bandPts[0].x, bandPts[0].y);
-      bandPts.forEach((p) => g.lineTo(p.x, p.y));
+      g.moveTo(bp[0].x, bp[0].y);
+      bp.forEach((p) => g.lineTo(p.x, p.y));
       g.closePath();
       g.endFill();
     }
   }
 
-  // Nose cone (triangle)
-  const noseTip = { x: 0, y: -hl - noseH };
-  const noseLeft = { x: -hw, y: -hl };
-  const noseRight = { x: hw, y: -hl };
-
-  const nosePts = [
-    { x: s.x + noseTip.x * cosA - noseTip.y * sinA, y: s.y + noseTip.x * sinA + noseTip.y * cosA },
-    { x: s.x + noseLeft.x * cosA - noseLeft.y * sinA, y: s.y + noseLeft.x * sinA + noseLeft.y * cosA },
-    { x: s.x + noseRight.x * cosA - noseRight.y * sinA, y: s.y + noseRight.x * sinA + noseRight.y * cosA },
-  ];
-
+  // Nose cone
+  const nPts = [
+    { x: 0, y: -hl - noseH }, { x: -hw, y: -hl }, { x: hw, y: -hl },
+  ].map((p) => ({ x: s.x + p.x * cosA - p.y * sinA, y: s.y + p.x * sinA + p.y * cosA }));
   g.beginFill(0xcc3333);
-  g.moveTo(nosePts[0].x, nosePts[0].y);
-  nosePts.forEach((p) => g.lineTo(p.x, p.y));
+  g.moveTo(nPts[0].x, nPts[0].y);
+  nPts.forEach((p) => g.lineTo(p.x, p.y));
   g.closePath();
   g.endFill();
 
   // Engine bell
   const bellTop = hl;
-  const bellBot = hl + rocketLen * 0.15;
-  const bellTopW = hw * 0.8;
-  const bellBotW = hw * 1.3;
-
+  const bellBot = hl + len * 0.12;
+  const btW = hw * 0.75;
+  const bbW = hw * 1.25;
   const bellPts = [
-    { x: -bellTopW, y: bellTop },
-    { x: bellTopW, y: bellTop },
-    { x: bellBotW, y: bellBot },
-    { x: -bellBotW, y: bellBot },
-  ].map((p) => ({
-    x: s.x + p.x * cosA - p.y * sinA,
-    y: s.y + p.x * sinA + p.y * cosA,
-  }));
-
+    { x: -btW, y: bellTop }, { x: btW, y: bellTop }, { x: bbW, y: bellBot }, { x: -bbW, y: bellBot },
+  ].map((p) => ({ x: s.x + p.x * cosA - p.y * sinA, y: s.y + p.x * sinA + p.y * cosA }));
   g.beginFill(0x222222);
   g.moveTo(bellPts[0].x, bellPts[0].y);
   bellPts.forEach((p) => g.lineTo(p.x, p.y));
@@ -326,23 +239,15 @@ function drawRocket(
   g.endFill();
 
   // Nozzle
-  const nozzleTop = bellBot;
-  const nozzleBot = bellBot + rocketLen * 0.08;
-  const nozzleW = bellBotW * 0.7;
-
-  const nozzlePts = [
-    { x: -nozzleW, y: nozzleTop },
-    { x: nozzleW, y: nozzleTop },
-    { x: nozzleW * 0.6, y: nozzleBot },
-    { x: -nozzleW * 0.6, y: nozzleBot },
-  ].map((p) => ({
-    x: s.x + p.x * cosA - p.y * sinA,
-    y: s.y + p.x * sinA + p.y * cosA,
-  }));
-
+  const nzTop = bellBot;
+  const nzBot = bellBot + len * 0.06;
+  const nzW = bbW * 0.65;
+  const nzPts = [
+    { x: -nzW, y: nzTop }, { x: nzW, y: nzTop }, { x: nzW * 0.55, y: nzBot }, { x: -nzW * 0.55, y: nzBot },
+  ].map((p) => ({ x: s.x + p.x * cosA - p.y * sinA, y: s.y + p.x * sinA + p.y * cosA }));
   g.beginFill(0x111111);
-  g.moveTo(nozzlePts[0].x, nozzlePts[0].y);
-  nozzlePts.forEach((p) => g.lineTo(p.x, p.y));
+  g.moveTo(nzPts[0].x, nzPts[0].y);
+  nzPts.forEach((p) => g.lineTo(p.x, p.y));
   g.closePath();
   g.endFill();
 }
@@ -351,10 +256,10 @@ function drawExhaust(g: PIXI.Graphics, particles: Particle[], camX: number, camY
   const scale = PX_PER_M * zoom;
   particles.forEach((p) => {
     const s = worldToScreen(p.x, p.y, camX, camY, zoom, w, h);
-    const size = p.size * scale * 2;
-    if (size > 0.3 && p.alpha > 0.01) {
+    const sz = p.size * scale * 1.5;
+    if (sz > 0.2 && p.alpha > 0.01) {
       g.beginFill(p.color, p.alpha);
-      g.drawCircle(s.x, s.y, Math.max(size, 0.5));
+      g.drawCircle(s.x, s.y, Math.max(sz, 0.4));
       g.endFill();
     }
   });
@@ -364,27 +269,22 @@ function drawSmoke(g: PIXI.Graphics, particles: Particle[], camX: number, camY: 
   const scale = PX_PER_M * zoom;
   particles.forEach((p) => {
     const s = worldToScreen(p.x, p.y, camX, camY, zoom, w, h);
-    const size = p.size * scale;
-    if (size > 0.5 && p.alpha > 0.01) {
-      g.beginFill(p.color, p.alpha * 0.5);
-      g.drawCircle(s.x, s.y, Math.max(size, 1));
+    const sz = p.size * scale * 0.8;
+    if (sz > 0.3 && p.alpha > 0.01) {
+      g.beginFill(p.color, p.alpha * 0.4);
+      g.drawCircle(s.x, s.y, Math.max(sz, 0.8));
       g.endFill();
     }
   });
 }
 
-function drawMoonOrbit(g: PIXI.Graphics, camX: number, camY: number, zoom: number, w: number, h: number) {
-  const pts: { x: number; y: number }[] = [];
+function drawOrbit(g: PIXI.Graphics, camX: number, camY: number, zoom: number, w: number, h: number) {
+  g.lineStyle(1, 0x224466, 0.15);
   for (let i = 0; i <= 64; i++) {
     const a = (i / 64) * Math.PI * 2;
-    pts.push({ x: Math.cos(a) * MOON_ORBIT_R, y: Math.sin(a) * MOON_ORBIT_R });
-  }
-
-  g.lineStyle(1, 0x224466, 0.2);
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p1 = worldToScreen(pts[i].x, pts[i].y, camX, camY, zoom, w, h);
-    const p2 = worldToScreen(pts[i + 1].x, pts[i + 1].y, camX, camY, zoom, w, h);
-    if (p1.x > -100 && p1.x < w + 100 && p1.y > -100 && p1.y < h + 100) {
+    const p1 = worldToScreen(Math.cos(a) * MOON_ORBIT_R, Math.sin(a) * MOON_ORBIT_R, camX, camY, zoom, w, h);
+    const p2 = worldToScreen(Math.cos((i + 1) / 64 * Math.PI * 2) * MOON_ORBIT_R, Math.sin((i + 1) / 64 * Math.PI * 2) * MOON_ORBIT_R, camX, camY, zoom, w, h);
+    if (p1.x > -50 && p1.x < w + 50 && p1.y > -50 && p1.y < h + 50) {
       g.moveTo(p1.x, p1.y);
       g.lineTo(p2.x, p2.y);
     }
@@ -399,7 +299,9 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
   const [showBriefing, setShowBriefing] = useState(true);
   const [autoMode, setAutoMode] = useState(true);
 
-  const init = useCallback(() => {
+  useEffect(() => {
+    if (showBriefing) return;
+
     if (!canvasRef.current) return;
     const canvas = canvasRef.current;
     const parent = canvas.parentElement;
@@ -431,188 +333,250 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
     const isp = 300;
     const totalStages = spacecraft ? spacecraft.stages.length : 3;
 
-    let simState = createInitialState(mass, thrust, isp, totalStages);
+    const simState = createInitialState(mass, thrust, isp, totalStages);
     simState.autoMode = autoMode;
+    simState.paused = true;
+    simState.phase = 'briefing';
     stateRef.current = simState;
 
     const handleResize = () => {
       if (!parent) return;
-      const nw = parent.clientWidth;
-      const nh = parent.clientHeight;
-      app.renderer.resize(nw, nh);
+      app.renderer.resize(parent.clientWidth, parent.clientHeight);
     };
     window.addEventListener('resize', handleResize);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const s = stateRef.current;
+      if (!s) return;
+
+      if (e.key === ' ') {
+        e.preventDefault();
+        if (s.phase === 'briefing') {
+          Object.assign(s, launchMission(s));
+        } else {
+          Object.assign(s, togglePause(s));
+        }
+        return;
+      }
+      if (e.key === '<' || e.key === ',') { Object.assign(s, setTimeWarp(s, -1)); return; }
+      if (e.key === '>' || e.key === '.') { Object.assign(s, setTimeWarp(s, 1)); return; }
+      if (e.key === 'm' || e.key === 'M') { Object.assign(s, toggleMapView(s)); return; }
+      if (e.key === '-' || e.key === '_') { Object.assign(s, adjustZoom(s, -1)); return; }
+      if (e.key === '=' || e.key === '+') { Object.assign(s, adjustZoom(s, 1)); return; }
+      if (e.key === '[') { s.rocket.throttle = Math.max(0, s.rocket.throttle - 0.1); return; }
+      if (e.key === ']') { s.rocket.throttle = Math.min(1, s.rocket.throttle + 0.1); return; }
+      if (e.key === '0') { s.rocket.throttle = 0; return; }
+      if (e.key === '9') { s.rocket.throttle = 1; return; }
+      if (e.key === 'Escape' && s.phase !== 'briefing' && s.phase !== 'landed') {
+        s.paused = true;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
 
     app.ticker.add(() => {
       const dt = Math.min(app.ticker.deltaMS / 1000, 0.05);
       timeRef.current += dt;
 
-      simState = updateSimulation(simState, dt);
-      stateRef.current = simState;
+      const s = stateRef.current!;
+      const updated = updateSimulation(s, dt);
+      if (updated !== s) Object.assign(s, updated);
 
-      const r = simState.rocket;
-      const camX = simState.mapView ? 0 : r.x;
-      const camY = simState.mapView ? 0 : r.y;
-      const zoom = simState.mapView ? 0.00005 : simState.zoom;
+      const r = s.rocket;
+      const camX = s.mapView ? 0 : r.x;
+      const camY = s.mapView ? 0 : r.y;
+      const zoom = s.mapView ? 0.00003 : s.zoom;
       const aw = app.renderer.width / (window.devicePixelRatio || 1);
       const ah = app.renderer.height / (window.devicePixelRatio || 1);
 
-      // Clear layers
       bgLayer.removeChildren();
       groundLayer.removeChildren();
       worldLayer.removeChildren();
       particleLayer.removeChildren();
       hudLayer.removeChildren();
 
-      // Background stars
+      // Stars
       const starG = new PIXI.Graphics();
-      drawStars(starG, camX, camY, zoom, aw, ah, timeRef.current);
+      drawStars(starG, camX, camY, aw, ah, timeRef.current);
       bgLayer.addChild(starG);
 
-      // Ground & sky
-      if (!simState.mapView) {
-        const groundG = new PIXI.Graphics();
-        drawGround(groundG, camX, camY, zoom, aw, ah, timeRef.current);
-        groundLayer.addChild(groundG);
+      // Ground
+      if (!s.mapView) {
+        const gndG = new PIXI.Graphics();
+        drawGround(groundLayer, camX, camY, zoom, aw, ah, timeRef.current);
       }
 
-      // World objects
-      const worldG = new PIXI.Graphics();
-      drawEarth(worldG, camX, camY, zoom, aw, ah);
-      drawMoonOrbit(worldG, camX, camY, zoom, aw, ah);
-      drawMoon(worldG, simState.moon.x, simState.moon.y, camX, camY, zoom, aw, ah);
-
-      if (r.active) {
-        drawRocket(worldG, r.x, r.y, r.angle, camX, camY, zoom, aw, ah, r.stage, r.totalStages);
-      }
-      worldLayer.addChild(worldG);
+      // World
+      const wG = new PIXI.Graphics();
+      drawEarth(wG, camX, camY, zoom, aw, ah);
+      drawOrbit(wG, camX, camY, zoom, aw, ah);
+      drawMoonBody(wG, s.moon.x, s.moon.y, camX, camY, zoom, aw, ah);
+      if (r.active) drawRocket(wG, r.x, r.y, r.angle, camX, camY, zoom, aw, ah, r.stage, r.totalStages);
+      worldLayer.addChild(wG);
 
       // Particles
-      const partG = new PIXI.Graphics();
-      drawExhaust(partG, simState.exhaust, camX, camY, zoom, aw, ah);
-      drawSmoke(partG, simState.smoke, camX, camY, zoom, aw, ah);
-      particleLayer.addChild(partG);
+      const pG = new PIXI.Graphics();
+      drawExhaust(pG, s.exhaust, camX, camY, zoom, aw, ah);
+      drawSmoke(pG, s.smoke, camX, camY, zoom, aw, ah);
+      particleLayer.addChild(pG);
 
       // HUD
       const hudG = new PIXI.Graphics();
-      const bigStyle = new PIXI.TextStyle({ fontFamily: 'monospace', fontSize: 22, fontWeight: 'bold', fill: 0xffffff });
-      const medStyle = new PIXI.TextStyle({ fontFamily: 'monospace', fontSize: 16, fill: 0x88ddff });
-      const smStyle = new PIXI.TextStyle({ fontFamily: 'monospace', fontSize: 12, fill: 0x88aacc });
+      const bigSt = new PIXI.TextStyle({ fontFamily: 'Courier New, monospace', fontSize: 22, fontWeight: 'bold', fill: 0xffffff });
+      const medSt = new PIXI.TextStyle({ fontFamily: 'Courier New, monospace', fontSize: 16, fill: 0x88ddff });
+      const smSt = new PIXI.TextStyle({ fontFamily: 'Courier New, monospace', fontSize: 12, fill: 0x88aacc });
 
-      // Altitude
-      const altText = new PIXI.Text(`ALT: ${simState.altitude.toFixed(1)} km`, bigStyle);
-      altText.x = 20;
-      altText.y = 20;
+      // Top center: altitude + velocity
+      const altText = new PIXI.Text(`ALT: ${s.altitude.toFixed(2)} km`, bigSt);
+      altText.anchor.set(0.5, 0);
+      altText.x = aw / 2;
+      altText.y = 16;
       hudG.addChild(altText);
 
-      // Velocity
-      const velText = new PIXI.Text(`VEL: ${simState.speed.toFixed(0)} m/s`, medStyle);
-      velText.x = 20;
-      velText.y = 48;
+      const velText = new PIXI.Text(`VEL: ${s.speed.toFixed(1)} m/s`, medSt);
+      velText.anchor.set(0.5, 0);
+      velText.x = aw / 2;
+      velText.y = 44;
       hudG.addChild(velText);
 
-      // Phase
-      const phaseLabel = simState.phase.replace(/-/g, ' ').toUpperCase();
-      const phaseText = new PIXI.Text(phaseLabel, new PIXI.TextStyle({
-        fontFamily: 'monospace', fontSize: 14, fontWeight: 'bold', fill: 0x4a9eff,
+      // Bottom center: mission status
+      const phaseLabel = s.phase.replace(/-/g, ' ').toUpperCase();
+      const statusText = new PIXI.Text(phaseLabel, new PIXI.TextStyle({
+        fontFamily: 'Courier New, monospace', fontSize: 14, fontWeight: 'bold', fill: 0x4a9eff,
       }));
-      phaseText.x = 20;
-      phaseText.y = 74;
-      hudG.addChild(phaseText);
+      statusText.anchor.set(0.5);
+      statusText.x = aw / 2;
+      statusText.y = ah - 36;
+      hudG.addChild(statusText);
 
-      // Time warp
-      const warpText = new PIXI.Text(`WARP: ${simState.timeWarp}x`, smStyle);
+      // Status background
+      const statusBg = new PIXI.Graphics();
+      statusBg.beginFill(0x000000, 0.6);
+      statusBg.drawRoundedRect(aw / 2 - statusText.width / 2 - 16, ah - 54, statusText.width + 32, 30, 15);
+      statusBg.endFill();
+      hudG.addChild(statusBg);
+      hudG.addChild(statusText);
+
+      // Bottom left: staging + warp
+      const warpText = new PIXI.Text(`WARP: ${s.timeWarp}x`, smSt);
       warpText.x = 20;
-      warpText.y = 96;
+      warpText.y = ah - 50;
       hudG.addChild(warpText);
 
+      // Staging stack
+      const stageBg = new PIXI.Graphics();
+      stageBg.beginFill(0x000000, 0.4);
+      stageBg.lineStyle(1, 0xffffff, 0.2);
+      stageBg.drawRoundedRect(16, ah - 200, 120, 140, 4);
+      stageBg.endFill();
+      hudG.addChild(stageBg);
+
+      const stageItems = ['Capsule', 'Separator', 'Engine', 'Fuel Tank'];
+      stageItems.forEach((item, i) => {
+        const isActive = i === 2;
+        const itemBg = new PIXI.Graphics();
+        if (isActive) {
+          itemBg.beginFill(0x4a9eff, 0.3);
+          itemBg.lineStyle(1, 0x4a9eff, 0.8);
+        } else {
+          itemBg.beginFill(0xffffff, 0.1);
+          itemBg.lineStyle(0);
+        }
+        itemBg.drawRoundedRect(20, ah - 190 + i * 34, 112, 28, 2);
+        itemBg.endFill();
+        hudG.addChild(itemBg);
+
+        const itemText = new PIXI.Text(item.toUpperCase(), new PIXI.TextStyle({
+          fontFamily: 'Courier New, monospace', fontSize: 10, fill: isActive ? 0x4a9eff : 0xaaaaaa,
+        }));
+        itemText.anchor.set(0.5);
+        itemText.x = 76;
+        itemText.y = ah - 176 + i * 34;
+        hudG.addChild(itemText);
+      });
+
+      // Bottom right: throttle
+      const throttleBg = new PIXI.Graphics();
+      throttleBg.beginFill(0x000000, 0.4);
+      throttleBg.lineStyle(1, 0xffffff, 0.1);
+      throttleBg.drawRoundedRect(aw - 70, ah - 240, 50, 220, 8);
+      throttleBg.endFill();
+      hudG.addChild(throttleBg);
+
+      // Throttle fill
+      const barInnerW = 30;
+      const barInnerH = 160;
+      const barInnerX = aw - 60;
+      const barInnerY = ah - 220;
+      hudG.beginFill(0x222233);
+      hudG.drawRoundedRect(barInnerX, barInnerY, barInnerW, barInnerH, 10);
+      hudG.endFill();
+
+      const fillH = barInnerH * r.throttle;
+      const fillCol = r.throttle > 0.5 ? 0xff6600 : 0x4a9eff;
+      hudG.beginFill(fillCol, 0.9);
+      hudG.drawRoundedRect(barInnerX, barInnerY + barInnerH - fillH, barInnerW, fillH, 10);
+      hudG.endFill();
+
+      const throtPct = new PIXI.Text(`${(r.throttle * 100).toFixed(0)}%`, new PIXI.TextStyle({
+        fontFamily: 'Courier New, monospace', fontSize: 11, fill: 0xffffff,
+      }));
+      throtPct.anchor.set(0.5);
+      throtPct.x = aw - 45;
+      throtPct.y = ah - 14;
+      hudG.addChild(throtPct);
+
       // Mission time
-      const mins = Math.floor(simState.time / 60);
-      const secs = Math.floor(simState.time % 60);
-      const timeText = new PIXI.Text(`T+ ${mins}m ${String(secs).padStart(2, '0')}s`, smStyle);
-      timeText.x = aw - 160;
-      timeText.y = 20;
-      hudG.addChild(timeText);
+      const mins = Math.floor(s.time / 60);
+      const secs = Math.floor(s.time % 60);
+      const timeStr = new PIXI.Text(`T+ ${mins}m ${String(secs).padStart(2, '0')}s`, smSt);
+      timeStr.x = aw - 160;
+      timeStr.y = 16;
+      hudG.addChild(timeStr);
 
-      // Stage
-      const stageText = new PIXI.Text(`STAGE ${r.stage + 1}/${r.totalStages}`, smStyle);
-      stageText.x = aw - 160;
-      stageText.y = 40;
-      hudG.addChild(stageText);
-
-      // Throttle bar
-      const barX = aw - 45;
-      const barY = 70;
-      const barW = 18;
-      const barH = 180;
-      hudG.beginFill(0x111122, 0.8);
-      hudG.drawRoundedRect(barX, barY, barW, barH, 4);
-      hudG.endFill();
-      const fillH = barH * r.throttle;
-      const fillColor = r.throttle > 0.5 ? 0xff6600 : 0x4488ff;
-      hudG.beginFill(fillColor, 0.9);
-      hudG.drawRoundedRect(barX, barY + barH - fillH, barW, fillH, 4);
-      hudG.endFill();
-
-      // Throttle label
-      const throtLabel = new PIXI.Text(`${(r.throttle * 100).toFixed(0)}%`, new PIXI.TextStyle({
-        fontFamily: 'monospace', fontSize: 11, fill: 0xffffff,
-      }));
-      throtLabel.x = barX - 4;
-      throtLabel.y = barY - 16;
-      hudG.addChild(throtLabel);
-
-      // Fuel bar
-      const fuelX = aw - 45;
-      const fuelY = 270;
-      const fuelH = 50;
-      hudG.beginFill(0x111122, 0.8);
-      hudG.drawRoundedRect(fuelX, fuelY, barW, fuelH, 4);
-      hudG.endFill();
-      const fuelPct = r.maxFuel > 0 ? r.fuel / r.maxFuel : 0;
-      const fuelColor = fuelPct > 0.3 ? 0xffcc00 : 0xff4444;
-      hudG.beginFill(fuelColor, 0.9);
-      hudG.drawRoundedRect(fuelX, fuelY + fuelH - fuelH * fuelPct, barW, fuelH * fuelPct, 4);
-      hudG.endFill();
-
-      const fuelLabel = new PIXI.Text('FUEL', new PIXI.TextStyle({
-        fontFamily: 'monospace', fontSize: 10, fill: 0xffffff,
-      }));
-      fuelLabel.x = fuelX - 2;
-      fuelLabel.y = fuelY - 14;
-      hudG.addChild(fuelLabel);
+      // Stage indicator
+      const stageStr = new PIXI.Text(`STAGE ${r.stage + 1}/${r.totalStages}`, smSt);
+      stageStr.x = aw - 160;
+      stageStr.y = 34;
+      hudG.addChild(stageStr);
 
       hudLayer.addChild(hudG);
 
       // Countdown overlay
-      if (simState.phase === 'countdown') {
-        const countdown = Math.ceil(5 - simState.phaseTimer);
-        const cdText = new PIXI.Text(`${countdown}`, new PIXI.TextStyle({
-          fontFamily: 'monospace', fontSize: 64, fontWeight: 'bold', fill: 0xff4444,
+      if (s.phase === 'countdown') {
+        const cd = Math.ceil(5 - s.phaseTimer);
+        const cdBg = new PIXI.Graphics();
+        cdBg.beginFill(0x000000, 0.5);
+        cdBg.drawRoundedRect(aw / 2 - 60, ah / 2 - 50, 120, 100, 8);
+        cdBg.endFill();
+        hudLayer.addChild(cdBg);
+
+        const cdText = new PIXI.Text(`${cd}`, new PIXI.TextStyle({
+          fontFamily: 'Courier New, monospace', fontSize: 56, fontWeight: 'bold', fill: 0xff4444,
         }));
         cdText.anchor.set(0.5);
         cdText.x = aw / 2;
-        cdText.y = ah / 2 - 40;
+        cdText.y = ah / 2 - 10;
         hudLayer.addChild(cdText);
 
-        const launchText = new PIXI.Text('LAUNCH SEQUENCE INITIATED', new PIXI.TextStyle({
-          fontFamily: 'monospace', fontSize: 14, fill: 0xff6666,
+        const cdLabel = new PIXI.Text('IGNITION', new PIXI.TextStyle({
+          fontFamily: 'Courier New, monospace', fontSize: 12, fill: 0xff6666,
         }));
-        launchText.anchor.set(0.5);
-        launchText.x = aw / 2;
-        launchText.y = ah / 2 + 20;
-        hudLayer.addChild(launchText);
+        cdLabel.anchor.set(0.5);
+        cdLabel.x = aw / 2;
+        cdLabel.y = ah / 2 + 30;
+        hudLayer.addChild(cdLabel);
       }
 
-      if (simState.phase === 'landed') {
+      if (s.phase === 'landed') {
         const landedBg = new PIXI.Graphics();
-        landedBg.beginFill(0x000000, 0.5);
-        landedBg.drawRoundedRect(aw / 2 - 180, ah / 2 - 40, 360, 80, 8);
+        landedBg.beginFill(0x000000, 0.6);
+        landedBg.drawRoundedRect(aw / 2 - 160, ah / 2 - 30, 320, 60, 8);
         landedBg.endFill();
         hudLayer.addChild(landedBg);
 
         const landedText = new PIXI.Text('LANDING CONFIRMED', new PIXI.TextStyle({
-          fontFamily: 'monospace', fontSize: 24, fontWeight: 'bold', fill: 0x44ff88,
+          fontFamily: 'Courier New, monospace', fontSize: 22, fontWeight: 'bold', fill: 0x44ff88,
         }));
         landedText.anchor.set(0.5);
         landedText.x = aw / 2;
@@ -620,10 +584,15 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
         hudLayer.addChild(landedText);
       }
 
-      // Paused overlay
-      if (simState.paused && simState.phase !== 'briefing') {
+      if (s.paused && s.phase !== 'briefing' && s.phase !== 'landed') {
+        const pauseBg = new PIXI.Graphics();
+        pauseBg.beginFill(0x000000, 0.5);
+        pauseBg.drawRoundedRect(aw / 2 - 50, ah / 2 - 20, 100, 40, 8);
+        pauseBg.endFill();
+        hudLayer.addChild(pauseBg);
+
         const pauseText = new PIXI.Text('PAUSED', new PIXI.TextStyle({
-          fontFamily: 'monospace', fontSize: 28, fontWeight: 'bold', fill: 0xffffff,
+          fontFamily: 'Courier New, monospace', fontSize: 20, fontWeight: 'bold', fill: 0xffffff,
         }));
         pauseText.anchor.set(0.5);
         pauseText.x = aw / 2;
@@ -636,109 +605,39 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('keydown', handleKeyDown);
       app.destroy(true, { children: true });
+      appRef.current = null;
     };
-  }, [game, autoMode]);
-
-  useEffect(() => {
-    if (!showBriefing) {
-      const cleanup = init();
-      return () => {
-        if (cleanup) cleanup();
-        if (appRef.current) {
-          appRef.current.destroy(true, { children: true });
-          appRef.current = null;
-        }
-      };
-    }
-  }, [init, showBriefing]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === ' ' && showBriefing) {
-        e.preventDefault();
-        setShowBriefing(false);
-        return;
-      }
-
-      if (e.key === ' ' && !showBriefing) {
-        e.preventDefault();
-        if (stateRef.current && stateRef.current.phase === 'briefing') {
-          stateRef.current = launchMission(stateRef.current);
-        } else if (stateRef.current) {
-          stateRef.current = togglePause(stateRef.current);
-        }
-      }
-      if (e.key === '<' || e.key === ',') {
-        if (stateRef.current) stateRef.current = setTimeWarp(stateRef.current, -1);
-      }
-      if (e.key === '>' || e.key === '.') {
-        if (stateRef.current) stateRef.current = setTimeWarp(stateRef.current, 1);
-      }
-      if (e.key === 'm' || e.key === 'M') {
-        if (stateRef.current) stateRef.current = toggleMapView(stateRef.current);
-      }
-      if (e.key === '-' || e.key === '_') {
-        if (stateRef.current) stateRef.current = adjustZoom(stateRef.current, -1);
-      }
-      if (e.key === '=' || e.key === '+') {
-        if (stateRef.current) stateRef.current = adjustZoom(stateRef.current, 1);
-      }
-      if (e.key === '[') {
-        if (stateRef.current) {
-          stateRef.current.rocket.throttle = Math.max(0, stateRef.current.rocket.throttle - 0.1);
-        }
-      }
-      if (e.key === ']') {
-        if (stateRef.current) {
-          stateRef.current.rocket.throttle = Math.min(1, stateRef.current.rocket.throttle + 0.1);
-        }
-      }
-      if (e.key === '0') {
-        if (stateRef.current) stateRef.current.rocket.throttle = 0;
-      }
-      if (e.key === '9') {
-        if (stateRef.current) stateRef.current.rocket.throttle = 1;
-      }
-      if (e.key === 'Escape') {
-        if (stateRef.current && stateRef.current.phase !== 'briefing') {
-          stateRef.current.paused = true;
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showBriefing]);
+  }, [showBriefing, autoMode, game]);
 
   if (showBriefing) {
     return (
       <div className="flight-view" style={{
         width: '100%', height: '100%', background: 'rgba(0,0,0,0.92)',
         display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
-        fontFamily: 'Orbitron, monospace',
+        fontFamily: 'Courier New, monospace',
       }}>
         <h1 style={{ color: '#4a9eff', fontSize: 48, marginBottom: 16, textShadow: '0 0 10px rgba(74,158,255,0.5)' }}>
           LUNAR MISSION
         </h1>
         <div style={{
-          background: 'rgba(255,255,255,0.04)', padding: 36, borderRadius: 12,
-          border: '1px solid rgba(255,255,255,0.1)', maxWidth: 580, textAlign: 'center',
+          background: 'rgba(255,255,255,0.05)', padding: 40, borderRadius: 12,
+          border: '1px solid rgba(255,255,255,0.1)', maxWidth: 650, textAlign: 'center',
           boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
         }}>
-          <h2 style={{ marginTop: 0, borderBottom: '1px solid rgba(255,255,255,0.15)', paddingBottom: 10, fontSize: 18, letterSpacing: 2 }}>
+          <h2 style={{ marginTop: 0, borderBottom: '1px solid rgba(255,255,255,0.2)', paddingBottom: 10 }}>
             MISSION BRIEFING
           </h2>
-          <p style={{ fontSize: 14, lineHeight: 1.7, opacity: 0.85, marginBottom: 20 }}>
+          <p style={{ fontSize: 16, lineHeight: 1.5, opacity: 0.9, marginBottom: 20 }}>
             Execute a fully autonomous lunar injection and landing profile.
             Realistic N-body gravity and physical thrust limits.
           </p>
-          <ul style={{ textAlign: 'left', opacity: 0.75, marginBottom: 24, lineHeight: 1.8, fontSize: 13 }}>
+          <ul style={{ textAlign: 'left', opacity: 0.8, marginBottom: 30, lineHeight: 1.6 }}>
             <li>5-second countdown before ignition</li>
-            <li>Gravity turn through atmosphere</li>
-            <li>Orbit insertion at 200 km</li>
+            <li>Gravity turn to establish Low Earth Orbit</li>
+            <li>Coast to Hohmann transfer window</li>
             <li>Trans-Lunar Injection burn</li>
-            <li>Lunar orbit insertion and powered descent</li>
           </ul>
 
           <div style={{ marginBottom: 20 }}>
@@ -753,20 +652,18 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
             </label>
           </div>
 
-          <h3 style={{ color: '#4a9eff', textTransform: 'uppercase', fontSize: 13, letterSpacing: 2, marginBottom: 12 }}>
-            Controls
+          <h3 style={{ color: '#4a9eff', textTransform: 'uppercase', marginBottom: 10 }}>
+            System Controls
           </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, textAlign: 'left', opacity: 0.75, marginBottom: 24, fontSize: 12 }}>
-            <div><strong>[/]</strong> Throttle -/+</div>
-            <div><strong>[9/0]</strong> Max/Min Throttle</div>
-            <div><strong>[&lt;/&gt;]</strong> Time Warp</div>
-            <div><strong>[M]</strong> Map View</div>
-            <div><strong>[-/+]</strong> Zoom</div>
-            <div><strong>[Space]</strong> Pause/Launch</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, textAlign: 'left', opacity: 0.8, marginBottom: 30, fontSize: 14 }}>
+            <div><strong>[&lt; / &gt;]</strong> : Adjust Time Warp</div>
+            <div><strong>[- / +]</strong> : Manual Zoom Camera</div>
+            <div><strong>MAP MODE</strong> : Toggle System View</div>
+            <div><strong>[/ ]</strong> : Throttle Control</div>
           </div>
 
-          <h2 style={{ color: '#ff4a4a', animation: 'pulse 1s infinite', letterSpacing: 2, fontSize: 16 }}>
-            [ PRESS SPACEBAR TO BEGIN ]
+          <h2 style={{ color: '#ff4a4a', animation: 'pulse 1s infinite', letterSpacing: 2 }}>
+            [ PRESS SPACEBAR TO LAUNCH ]
           </h2>
         </div>
         <style>{`@keyframes pulse { 0% { opacity: 1; text-shadow: 0 0 10px #ff4a4a; } 50% { opacity: 0.4; text-shadow: none; } 100% { opacity: 1; text-shadow: 0 0 10px #ff4a4a; } }`}</style>
