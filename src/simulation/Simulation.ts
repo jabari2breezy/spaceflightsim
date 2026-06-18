@@ -101,7 +101,7 @@ function gravityAccel(x: number, y: number, body: SimBody): { ax: number; ay: nu
 }
 
 function addSmoke(s: SimState, x: number, y: number, angle: number, throttle: number): void {
-  if (throttle <= 0) return;
+  if (throttle <= 0 || s.smoke.length > 300) return;
   const count = Math.floor(throttle * 3);
   for (let i = 0; i < count; i++) {
     const spread = (Math.random() - 0.5) * 0.5;
@@ -121,7 +121,7 @@ function addSmoke(s: SimState, x: number, y: number, angle: number, throttle: nu
 }
 
 function addExhaust(s: SimState, x: number, y: number, angle: number, throttle: number): void {
-  if (throttle <= 0) return;
+  if (throttle <= 0 || s.exhaust.length > 500) return;
   const count = Math.floor(throttle * 4);
   for (let i = 0; i < count; i++) {
     const spread = (Math.random() - 0.5) * 0.8;
@@ -382,19 +382,13 @@ function executeAutoPilot(s: SimState): MissionPhase {
 export function updateSimulation(state: SimState, dt: number): SimState {
   if (state.paused || state.phase === 'briefing' || state.phase === 'landed') return state;
 
-  const s = { ...state };
-  s.rocket = { ...s.rocket };
-  s.moon = { ...s.moon };
-  s.smoke = [...s.smoke];
-  s.exhaust = [...s.exhaust];
+  const effectiveDt = dt * state.timeWarp;
+  state.time += dt;
+  state.simTime += effectiveDt;
+  state.phaseTimer += effectiveDt;
 
-  const effectiveDt = dt * s.timeWarp;
-  s.time += dt;
-  s.simTime += effectiveDt;
-  s.phaseTimer += effectiveDt;
-
-  const r = s.rocket;
-  const { earth, moon } = s;
+  const r = state.rocket;
+  const { earth, moon } = state;
 
   // Moon orbit
   const moonG = gravityAccel(moon.x, moon.y, earth);
@@ -418,9 +412,9 @@ export function updateSimulation(state: SimState, dt: number): SimState {
     r.fuel -= fuelRate * effectiveDt;
     if (r.fuel < 0) r.fuel = 0;
 
-    addExhaust(s, r.x, r.y, r.angle, r.throttle);
-    if (s.altitude < 100000) {
-      addSmoke(s, r.x, r.y, r.angle, r.throttle);
+    addExhaust(state, r.x, r.y, r.angle, r.throttle);
+    if (state.altitude < 100000) {
+      addSmoke(state, r.x, r.y, r.angle, r.throttle);
     }
   }
 
@@ -431,19 +425,19 @@ export function updateSimulation(state: SimState, dt: number): SimState {
 
   // Altitude & speed
   const distEarth = Math.sqrt(r.x * r.x + r.y * r.y);
-  s.altitude = Math.max(0, (distEarth - EARTH_RADIUS) / 1000);
-  s.speed = Math.sqrt(r.vx * r.vx + r.vy * r.vy);
+  state.altitude = Math.max(0, (distEarth - EARTH_RADIUS) / 1000);
+  state.speed = Math.sqrt(r.vx * r.vx + r.vy * r.vy);
 
   // Update particles
-  updateParticles(s.smoke, effectiveDt);
-  updateParticles(s.exhaust, effectiveDt);
+  updateParticles(state.smoke, effectiveDt);
+  updateParticles(state.exhaust, effectiveDt);
 
   // Auto-pilot
-  if (s.autoMode) {
-    s.phase = executeAutoPilot(s);
+  if (state.autoMode) {
+    state.phase = executeAutoPilot(state);
   }
 
-  return s;
+  return state;
 }
 
 export function togglePause(s: SimState): SimState {
