@@ -277,6 +277,19 @@ export class SpacecraftBuilder {
   }
 
   /**
+   * Remove a stage
+   */
+  removeStage(stageIndex: number): boolean {
+    if (stageIndex < 0 || stageIndex >= this.spacecraft.stages.length || this.spacecraft.stages.length <= 1) {
+      return false;
+    }
+    this.spacecraft.stages.splice(stageIndex, 1);
+    this.spacecraft.stages.forEach((s, i) => { s.number = i + 1; });
+    this.recalculateMass();
+    return true;
+  }
+
+  /**
    * Calculate total spacecraft mass
    */
   private recalculateMass(): void {
