@@ -444,9 +444,24 @@ export function togglePause(s: SimState): SimState {
   return { ...s, paused: !s.paused };
 }
 
+function nearestPresetIndex(value: number, presets: number[]): number {
+  const exact = presets.indexOf(value);
+  if (exact >= 0) return exact;
+  let best = 0;
+  let bestDiff = Math.abs(presets[0] - value);
+  for (let i = 1; i < presets.length; i++) {
+    const diff = Math.abs(presets[i] - value);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = i;
+    }
+  }
+  return best;
+}
+
 export function setTimeWarp(s: SimState, dir: number): SimState {
   const warps = [0.5, 1, 2, 5, 10, 50, 100, 500, 1000];
-  const idx = warps.indexOf(s.timeWarp);
+  const idx = nearestPresetIndex(s.timeWarp, warps);
   const next = dir > 0 ? Math.min(idx + 1, warps.length - 1) : Math.max(idx - 1, 0);
   return { ...s, timeWarp: warps[next] };
 }
@@ -457,7 +472,7 @@ export function toggleMapView(s: SimState): SimState {
 
 export function adjustZoom(s: SimState, dir: number): SimState {
   const zooms = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100];
-  const idx = zooms.indexOf(s.zoom);
+  const idx = nearestPresetIndex(s.zoom, zooms);
   const next = dir > 0 ? Math.min(idx + 1, zooms.length - 1) : Math.max(idx - 1, 0);
   return { ...s, zoom: zooms[next] };
 }

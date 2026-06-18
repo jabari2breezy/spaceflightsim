@@ -34,14 +34,19 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
   const timeRef = useRef(0);
   const [showBriefing, setShowBriefing] = useState(true);
   const [autoMode, setAutoMode] = useState(true);
+  const launchPendingRef = useRef(false);
+
+  useEffect(() => {
+    if (stateRef.current) stateRef.current.autoMode = autoMode;
+  }, [autoMode, showBriefing]);
 
   useEffect(() => {
     if (!showBriefing) return;
     const handleBriefingKey = (e: KeyboardEvent) => {
-      if (e.key === ' ') {
-        e.preventDefault();
-        setShowBriefing(false);
-      }
+      if (e.code !== 'Space' || e.repeat) return;
+      e.preventDefault();
+      launchPendingRef.current = true;
+      setShowBriefing(false);
     };
     window.addEventListener('keydown', handleBriefingKey);
     return () => window.removeEventListener('keydown', handleBriefingKey);
@@ -147,6 +152,11 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
     simState.phase = 'briefing';
     stateRef.current = simState;
 
+    if (launchPendingRef.current) {
+      launchPendingRef.current = false;
+      Object.assign(simState, launchMission(simState));
+    }
+
     // Pre-generate star positions (static, never change)
     const stars: { x: number; y: number; s: number; a: number; l: number }[] = [];
     for (let i = 0; i < 200; i++) {
@@ -172,30 +182,6 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
       app.renderer.resize(parent.clientWidth, parent.clientHeight);
     };
     window.addEventListener('resize', handleResize);
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const s = stateRef.current;
-      if (!s) return;
-      if (e.key === ' ') {
-        e.preventDefault();
-        if (s.phase === 'briefing') Object.assign(s, launchMission(s));
-        else Object.assign(s, togglePause(s));
-        return;
-      }
-      if (e.key === '<' || e.key === ',') { Object.assign(s, setTimeWarp(s, -1)); return; }
-      if (e.key === '>' || e.key === '.') { Object.assign(s, setTimeWarp(s, 1)); return; }
-      if (e.key === 'm' || e.key === 'M') { Object.assign(s, toggleMapView(s)); return; }
-      if (e.key === '-' || e.key === '_') { Object.assign(s, adjustZoom(s, -1)); return; }
-      if (e.key === '=' || e.key === '+') { Object.assign(s, adjustZoom(s, 1)); return; }
-      if (e.key === '[') { s.rocket.throttle = Math.max(0, s.rocket.throttle - 0.1); return; }
-      if (e.key === ']') { s.rocket.throttle = Math.min(1, s.rocket.throttle + 0.1); return; }
-      if (e.key === '0') { s.rocket.throttle = 0; return; }
-      if (e.key === '9') { s.rocket.throttle = 1; return; }
-      if (e.key === 'Escape' && s.phase !== 'briefing' && s.phase !== 'landed') {
-        s.paused = true;
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
 
     app.ticker.add(() => {
       const dt = Math.min(app.ticker.deltaMS / 1000, 0.05);
@@ -564,11 +550,77 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      window.removeEventListener('keydown', handleKeyDown);
       app.destroy(true, { children: true });
       appRef.current = null;
+      stateRef.current = null;
     };
   }, [showBriefing, autoMode, game]);
+
+  useEffect(() => {
+    if (showBriefing) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const s = stateRef.current;
+      if (!s) return;
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (s.phase === 'briefing') Object.assign(s, launchMission(s));
+        else if (!e.repeat) Object.assign(s, togglePause(s));
+        return;
+      }
+      if (e.repeat) return;
+
+      if (e.code === 'Comma' || e.key === '<') {
+        e.preventDefault();
+        Object.assign(s, setTimeWarp(s, -1));
+        return;
+      }
+      if (e.code === 'Period' || e.key === '>') {
+        e.preventDefault();
+        Object.assign(s, setTimeWarp(s, 1));
+        return;
+      }
+      if (e.code === 'KeyW') {
+        Object.assign(s, setTimeWarp(s, 1));
+        return;
+      }
+      if (e.code === 'KeyM') {
+        Object.assign(s, toggleMapView(s));
+        return;
+      }
+      if (e.code === 'Minus' || e.code === 'NumpadSubtract') {
+        Object.assign(s, adjustZoom(s, -1));
+        return;
+      }
+      if (e.code === 'Equal' || e.code === 'NumpadAdd') {
+        Object.assign(s, adjustZoom(s, 1));
+        return;
+      }
+      if (e.code === 'BracketLeft') {
+        s.rocket.throttle = Math.max(0, s.rocket.throttle - 0.1);
+        return;
+      }
+      if (e.code === 'BracketRight') {
+        s.rocket.throttle = Math.min(1, s.rocket.throttle + 0.1);
+        return;
+      }
+      if (e.code === 'Digit0' || e.code === 'Numpad0') {
+        s.rocket.throttle = 0;
+        return;
+      }
+      if (e.code === 'Digit9' || e.code === 'Numpad9') {
+        s.rocket.throttle = 1;
+        return;
+      }
+      if (e.code === 'Escape' && s.phase !== 'briefing' && s.phase !== 'landed') {
+        s.paused = true;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showBriefing]);
 
   if (showBriefing) {
     return (
@@ -606,10 +658,12 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
           </div>
           <h3 style={{ color: '#4a9eff', textTransform: 'uppercase', marginBottom: 10 }}>System Controls</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, textAlign: 'left', opacity: 0.8, marginBottom: 30, fontSize: 14 }}>
-            <div><strong>[&lt; / &gt;]</strong> : Adjust Time Warp</div>
-            <div><strong>[- / +]</strong> : Manual Zoom Camera</div>
+            <div><strong>, / .</strong> : Adjust Time Warp</div>
+            <div><strong>- / +</strong> : Manual Zoom Camera</div>
             <div><strong>M</strong> : Toggle Map Mode</div>
-            <div><strong>[/ ]</strong> : Throttle Control</div>
+            <div><strong>[ / ]</strong> : Throttle Control</div>
+            <div><strong>W</strong> : Cycle Time Warp Up</div>
+            <div><strong>Space</strong> : Pause / Resume</div>
           </div>
           <h2 style={{ color: '#ff4a4a', animation: 'pulse 1s infinite', letterSpacing: 2 }}>
             [ PRESS SPACEBAR TO LAUNCH ]
