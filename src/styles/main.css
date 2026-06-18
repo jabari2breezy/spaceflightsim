@@ -373,15 +373,14 @@ body {
 
 .flight-body {
   flex: 1;
-  display: grid;
-  grid-template-columns: 1fr 340px;
-  gap: 0;
+  display: flex;
   overflow: hidden;
   position: relative;
 }
 
 .flight-main {
-  position: relative;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
 }
 

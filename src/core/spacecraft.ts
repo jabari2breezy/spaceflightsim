@@ -140,6 +140,26 @@ export const PARTS_LIBRARY: Record<string, SpacecraftPart> = {
     } as HeatShieldProperties,
   },
 
+  // Nose Cone
+  'nosecone': {
+    id: 'nosecone',
+    name: 'Nose Cone',
+    type: 'structure',
+    dryMass: 120,
+    cost: 200,
+    dimensions: { x: 2.0, y: 2.0, z: 2.5 },
+    properties: { shape: 'conical', dragCoeff: 0.05 },
+  },
+  'nosecone-apollo': {
+    id: 'nosecone-apollo',
+    name: 'Apollo Nose Cone',
+    type: 'structure',
+    dryMass: 560,
+    cost: 500,
+    dimensions: { x: 3.9, y: 3.9, z: 3.2 },
+    properties: { shape: 'conical', dragCoeff: 0.04, crewCapacity: 3 },
+  },
+
   // Structure
   'tank-cap-large': {
     id: 'tank-cap-large',
@@ -404,6 +424,53 @@ export class SpacecraftBuilder {
    */
   build(): Spacecraft {
     return { ...this.spacecraft };
+  }
+
+  /**
+   * Get preset rocket configurations
+   */
+  static getPresets(): { name: string; build: (builder: SpacecraftBuilder) => void }[] {
+    return [
+      {
+        name: 'Saturn V (Apollo)',
+        build: (b) => {
+          b.addStage();
+          b.addPartToStage(0, 'nosecone-apollo');
+          b.addPartToStage(0, 'guidance-computer');
+          b.addPartToStage(1, 'rp1-tank-1');
+          b.addPartToStage(1, 'merlin-1d');
+          b.addStage();
+          b.addPartToStage(2, 'rp1-tank-1');
+          b.addPartToStage(2, 'merlin-1d');
+          b.addStage();
+          b.addPartToStage(3, 'rp1-tank-1');
+          b.addPartToStage(3, 'merlin-1d');
+        },
+      },
+      {
+        name: 'Falcon 9',
+        build: (b) => {
+          b.addStage();
+          b.addPartToStage(0, 'nosecone');
+          b.addPartToStage(0, 'guidance-computer');
+          b.addPartToStage(0, 'lh2-tank-1');
+          b.addPartToStage(1, 'rp1-tank-1');
+          b.addPartToStage(1, 'merlin-1d');
+        },
+      },
+      {
+        name: 'Lunar Explorer',
+        build: (b) => {
+          b.addStage();
+          b.addPartToStage(0, 'nosecone');
+          b.addPartToStage(0, 'guidance-computer');
+          b.addPartToStage(0, 'rp1-tank-1');
+          b.addPartToStage(1, 'rp1-tank-1');
+          b.addPartToStage(1, 'merlin-1d');
+          b.addPartToStage(1, 'ion-drive');
+        },
+      },
+    ];
   }
 
   /**

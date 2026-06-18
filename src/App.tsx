@@ -1,16 +1,11 @@
-/**
- * Main App Component
- */
-
 import React, { useState, useEffect, useRef } from 'react';
 import { CelestiaGame } from './core/game';
-import { SpacecraftBuilder } from './core/spacecraft';
 import MainMenu from './ui/screens/MainMenu';
-import VABScreen from './ui/screens/VABScreen';
 import FlightScreen from './ui/screens/FlightScreen';
+import VABScreen from './ui/screens/VABScreen';
 import './styles/main.css';
 
-export type Screen = 'menu' | 'vab' | 'flight' | 'missions';
+export type Screen = 'menu' | 'flight' | 'vab';
 
 export const GameContext = React.createContext<CelestiaGame | null>(null);
 
@@ -20,37 +15,31 @@ const App: React.FC = () => {
   const gameRef = useRef<CelestiaGame | null>(null);
 
   useEffect(() => {
-    // Initialize game on mount
     const newGame = new CelestiaGame('starter');
+    newGame.buildSpacecraft('Aurora', () => {});
     gameRef.current = newGame;
     setGame(newGame);
   }, []);
 
-  const handleNavigateTo = (screen: Screen) => {
+  const handleNavigate = (screen: Screen) => {
     setCurrentScreen(screen);
   };
 
-  const handleBuildSpacecraft = (sc: any) => {
-    if (gameRef.current) {
-      gameRef.current.loadSpacecraft(sc);
-    }
-  };
-
   if (!game) {
-    return <div className="loading">Initializing Celestia...</div>;
+    return <div className="loading">Initializing</div>;
   }
 
   return (
     <GameContext.Provider value={game}>
       <div className="app">
         {currentScreen === 'menu' && (
-          <MainMenu onNavigate={handleNavigateTo} />
-        )}
-        {currentScreen === 'vab' && (
-          <VABScreen onNavigate={handleNavigateTo} onBuild={handleBuildSpacecraft} />
+          <MainMenu onNavigate={handleNavigate} />
         )}
         {currentScreen === 'flight' && (
-          <FlightScreen onNavigate={handleNavigateTo} />
+          <FlightScreen onNavigate={handleNavigate} />
+        )}
+        {currentScreen === 'vab' && (
+          <VABScreen onNavigate={handleNavigate} />
         )}
       </div>
     </GameContext.Provider>

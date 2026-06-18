@@ -1,495 +1,245 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Screen } from '../../App';
-import { PARTS_LIBRARY } from '../../core/spacecraft';
-import { SpacecraftPart, Spacecraft, Stage } from '../../types';
-import { drawPart2D } from '../../utils/render2d';
+import React, { useState, useEffect, useContext } from 'react';
+import { GameContext, Screen } from '../../App';
+import { SpacecraftBuilder, PARTS_LIBRARY } from '../../core/spacecraft';
+import SpacecraftPreview from '../components/SpacecraftPreview';
 
 interface VABScreenProps {
   onNavigate: (screen: Screen) => void;
-  onBuild: (spacecraft: Spacecraft) => void;
 }
 
-interface PlacedPart {
-  id: string;
-  type: string;
-  gx: number; // grid x position
-  gy: number; // grid y position
-  rotation?: number; // rotation in degrees (0, 90, 180, 270)
-}
+const VABScreen: React.FC<VABScreenProps> = ({ onNavigate }) => {
+  const game = useContext(GameContext);
+  const [showSetup, setShowSetup] = useState(true);
+  const [rocketName, setRocketName] = useState('');
+  const [builder, setBuilder] = useState<SpacecraftBuilder | null>(null);
+  const [selectedStage, setSelectedStage] = useState(0);
+  const [filter, setFilter] = useState<string>('all');
+  const [, forceUpdate] = useState(0);
 
-// Map part type to integer grid sizes so everything aligns and snaps perfectly
-export const getPartGridSize = (type: string): { w: number; h: number } => {
-  switch (type) {
-    case 'rp1-tank-1':
-    case 'lh2-tank-1':
-      return { w: 2, h: 3 }; // Tanks: 2 wide, 3 tall
-    case 'merlin-1d':
-    case 'rs-25':
-      return { w: 2, h: 2 }; // Engines: 2 wide, 2 tall (perfect fit)
-    case 'guidance-computer':
-    case 'ablative-shield':
-    case 'tank-cap-large':
-    case 'interstage':
-      return { w: 2, h: 1 }; // Adaptors: 2 wide, 1 tall
-    case 'ion-drive':
-    case 'rcs-thruster':
-    case 'antenna-hga':
-      return { w: 1, h: 1 }; // Utility: 1 wide, 1 tall
-    case 'solar-panel':
-      return { w: 1, h: 2 }; // Side attachments: 1 wide, 2 tall
-    default:
-      return { w: 2, h: 2 };
-  }
-};
+  const presets = SpacecraftBuilder.getPresets();
 
-const VABScreen: React.FC<VABScreenProps> = ({ onNavigate, onBuild }) => {
-  const [placedParts, setPlacedParts] = useState<PlacedPart[]>([]);
-  const [draggedPartType, setDraggedPartType] = useState<string | null>(null);
-  const [activeDragId, setActiveDragId] = useState<string | null>(null); // if dragging an already placed part
-  const [heldRotation, setHeldRotation] = useState(0); // in degrees (0, 90, 180, 270)
-  
-  const [spacecraftName, setSpacecraftName] = useState('My Custom Rocket');
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [hoveredCell, setHoveredCell] = useState<{ gx: number; gy: number } | null>(null);
-
-  const cellSize = 30;
-  const gridCols = 12;
-  const gridRows = 18;
-
-  // Keyboard R rotation listener
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'r' || e.key === 'R') {
-        setHeldRotation((prev) => (prev + 90) % 360);
-
-        // If hovering over a placed part and not dragging, rotate it directly
-        if (!draggedPartType && !activeDragId && hoveredCell) {
-          setPlacedParts((prev) =>
-            prev.map((p) => {
-              const gSize = getPartGridSize(p.type);
-              const inside =
-                hoveredCell.gx >= p.gx &&
-                hoveredCell.gx < p.gx + gSize.w &&
-                hoveredCell.gy >= p.gy &&
-                hoveredCell.gy < p.gy + gSize.h;
-              return inside ? { ...p, rotation: ((p.rotation || 0) + 90) % 360 } : p;
-            })
-          );
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [draggedPartType, activeDragId, hoveredCell]);
-
-  // Interactive 2D Canvas rendering loop for VAB Floor
-  useEffect(() => {
-    if (!canvasRef.current) return;
-
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width;
-    canvas.height = rect.height;
-
-    const gridWidth = gridCols * cellSize;
-    const gridHeight = gridRows * cellSize;
-    const gridLeft = (canvas.width - gridWidth) / 2;
-    const gridTop = (canvas.height - gridHeight) / 2;
-
-    const render = () => {
-      // Clear with dark blueprints color
-      ctx.fillStyle = '#090B14';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Draw grid blueprint lines
-      ctx.strokeStyle = 'rgba(30, 41, 59, 0.5)';
-      ctx.lineWidth = 1;
-
-      for (let c = 0; c <= gridCols; c++) {
-        const x = gridLeft + c * cellSize;
-        ctx.beginPath();
-        ctx.moveTo(x, gridTop);
-        ctx.lineTo(x, gridTop + gridHeight);
-        ctx.stroke();
-      }
-
-      for (let r = 0; r <= gridRows; r++) {
-        const y = gridTop + r * cellSize;
-        ctx.beginPath();
-        ctx.moveTo(gridLeft, y);
-        ctx.lineTo(gridLeft + gridWidth, y);
-        ctx.stroke();
-      }
-
-      // Draw placed parts on grid
-      placedParts.forEach((placed) => {
-        // Skip rendering if this part is actively being dragged/moved
-        if (placed.id === activeDragId) return;
-
-        const spec = PARTS_LIBRARY[placed.type];
-        if (!spec) return;
-
-        const gSize = getPartGridSize(placed.type);
-        const w = gSize.w * cellSize;
-        const h = gSize.h * cellSize;
-        const x = gridLeft + placed.gx * cellSize + w / 2;
-        const y = gridTop + placed.gy * cellSize + h / 2;
-
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(((placed.rotation || 0) * Math.PI) / 180);
-        drawPart2D(ctx, spec, 0, 0, w, h);
-        ctx.restore();
-      });
-
-      // Draw drag preview under mouse
-      const activeType = draggedPartType || (activeDragId ? placedParts.find(p => p.id === activeDragId)?.type : null);
-      if (activeType && hoveredCell) {
-        const spec = PARTS_LIBRARY[activeType];
-        if (spec) {
-          const gSize = getPartGridSize(activeType);
-          const w = gSize.w * cellSize;
-          const h = gSize.h * cellSize;
-          const x = gridLeft + hoveredCell.gx * cellSize + w / 2;
-          const y = gridTop + hoveredCell.gy * cellSize + h / 2;
-
-          ctx.save();
-          ctx.globalAlpha = 0.55;
-          ctx.translate(x, y);
-          ctx.rotate((heldRotation * Math.PI) / 180);
-          drawPart2D(ctx, spec, 0, 0, w, h);
-          ctx.restore();
-
-          // Highlight green snap target outline
-          ctx.strokeStyle = '#10B981';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(gridLeft + hoveredCell.gx * cellSize, gridTop + hoveredCell.gy * cellSize, w, h);
-        }
-      }
-    };
-
-    render();
-  }, [placedParts, draggedPartType, activeDragId, hoveredCell, heldRotation]);
-
-  // Handle drag coordinates calculation
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    const gridWidth = gridCols * cellSize;
-    const gridHeight = gridRows * cellSize;
-    const gridLeft = (canvas.width - gridWidth) / 2;
-    const gridTop = (canvas.height - gridHeight) / 2;
-
-    const gx = Math.floor((x - gridLeft) / cellSize);
-    const gy = Math.floor((y - gridTop) / cellSize);
-
-    if (gx >= 0 && gx < gridCols && gy >= 0 && gy < gridRows) {
-      setHoveredCell({ gx, gy });
-    } else {
-      setHoveredCell(null);
-    }
+  const createBuilder = (name: string) => {
+    if (!game) return null;
+    const b = new SpacecraftBuilder(name);
+    game.buildSpacecraft(name, () => {});
+    setBuilder(b);
+    setShowSetup(false);
+    setSelectedStage(0);
+    return b;
   };
 
-  // Drag and drop trigger mousedown
-  const handleCanvasMouseDown = () => {
-    if (!hoveredCell) return;
-
-    // Check if clicking on an already placed part to drag/move it
-    const clicked = placedParts.find((p) => {
-      const gSize = getPartGridSize(p.type);
-      return (
-        hoveredCell.gx >= p.gx &&
-        hoveredCell.gx < p.gx + gSize.w &&
-        hoveredCell.gy >= p.gy &&
-        hoveredCell.gy < p.gy + gSize.h
-      );
-    });
-
-    if (clicked) {
-      setActiveDragId(clicked.id);
-      setHeldRotation(clicked.rotation || 0);
-      setHoveredCell({ gx: clicked.gx, gy: clicked.gy });
-    }
+  const createWithPreset = (presetIdx: number) => {
+    if (!game) return;
+    const b = new SpacecraftBuilder(presets[presetIdx].name);
+    presets[presetIdx].build(b);
+    game.buildSpacecraft(presets[presetIdx].name, () => {});
+    setBuilder(b);
+    setShowSetup(false);
+    setSelectedStage(0);
+    setRocketName(presets[presetIdx].name);
   };
 
-  // Drop part on mouseup
-  const handleCanvasMouseUp = () => {
-    if (hoveredCell) {
-      if (draggedPartType) {
-        // Place new part dragged from panel
-        const newPart: PlacedPart = {
-          id: `${draggedPartType}-${Date.now()}`,
-          type: draggedPartType,
-          gx: hoveredCell.gx,
-          gy: hoveredCell.gy,
-          rotation: heldRotation,
-        };
-        setPlacedParts((prev) => [...prev, newPart]);
-        setDraggedPartType(null);
-        setHeldRotation(0);
-      } else if (activeDragId) {
-        // Drop already placed part onto new snap location
-        setPlacedParts((prev) =>
-          prev.map((p) =>
-            p.id === activeDragId
-              ? { ...p, gx: hoveredCell.gx, gy: hoveredCell.gy, rotation: heldRotation }
-              : p
-          )
-        );
-        setActiveDragId(null);
-        setHeldRotation(0);
-      }
-    } else {
-      // If dropped outside grid, delete/cancel drag
-      if (activeDragId) {
-        setPlacedParts((prev) => prev.filter((p) => p.id !== activeDragId));
-        setActiveDragId(null);
-      }
-      setDraggedPartType(null);
-      setHeldRotation(0);
-    }
+  const handleCreate = () => {
+    if (!rocketName.trim()) return;
+    createBuilder(rocketName.trim());
   };
 
-  // Start dragging from palette
-  const handlePaletteStartDrag = (type: string) => {
-    setDraggedPartType(type);
-    setHeldRotation(0);
-  };
+  if (!game) return <div className="loading">Loading...</div>;
 
-  // Compile placed parts list into sequential Stages spacecraft object
-  const compileSpacecraft = () => {
-    if (placedParts.length === 0) {
-      alert('Grid is empty! Drag some parts on to build a rocket.');
-      return;
-    }
-
-    // Sort parts from bottom to top (highest gy down to lowest gy)
-    const sorted = [...placedParts].sort((a, b) => b.gy - a.gy);
-    const stages: Stage[] = [];
-    let currentStageParts: SpacecraftPart[] = [];
-    let currentStageNum = 1;
-
-    sorted.forEach((p) => {
-      const template = PARTS_LIBRARY[p.type];
-      if (!template) return;
-
-      const partInst: SpacecraftPart = {
-        ...template,
-        id: `${template.id}-${Date.now()}-${Math.random()}`,
-        properties: {
-          ...template.properties,
-          rotation: p.rotation || 0,
-        }
-      };
-
-      currentStageParts.push(partInst);
-
-      // Interstages / decouplers close a stage and split staging order
-      if (template.id === 'interstage' || template.type === 'structure') {
-        stages.push({
-          number: currentStageNum++,
-          parts: currentStageParts,
-          active: false,
-        });
-        currentStageParts = [];
-      }
-    });
-
-    if (currentStageParts.length > 0) {
-      stages.push({
-        number: currentStageNum,
-        parts: currentStageParts,
-        active: false,
-      });
-    }
-
-    // Standardize stages (reverse so lower stage is active first)
-    stages.reverse();
-    stages.forEach((st, idx) => {
-      st.number = idx + 1;
-    });
-
-    const totalMass = stages.reduce(
-      (m, st) =>
-        m +
-        st.parts.reduce(
-          (pm, pt) => pm + pt.dryMass + (pt.properties.capacity || 0),
-          0
-        ),
-      0
-    );
-
-    const spacecraft: Spacecraft = {
-      id: `sc-${Date.now()}`,
-      name: spacecraftName,
-      stages,
-      mass: totalMass,
-      position: { x: 0, y: 0, z: 0 },
-      velocity: { x: 0, y: 0, z: 0 },
-      rotation: { x: 0, y: 0, z: 0 },
-      angularVelocity: { x: 0, y: 0, z: 0 },
-    };
-
-    onBuild(spacecraft);
-    onNavigate('flight');
-  };
-
-  return (
-    <div className="vab-screen" style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100vh',
-      backgroundColor: '#05070F',
-      color: '#FFF',
-      fontFamily: 'sans-serif'
-    }}>
-      {/* VAB Header */}
-      <div style={{
-        padding: '15px 30px',
-        backgroundColor: '#0F172A',
-        borderBottom: '1px solid #1E293B',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
-        <div>
-          <input
-            type="text"
-            value={spacecraftName}
-            onChange={(e) => setSpacecraftName(e.target.value)}
-            style={{
-              fontSize: '20px',
-              fontWeight: 'bold',
-              background: 'transparent',
-              border: 'none',
-              borderBottom: '1px solid #334155',
-              color: '#00E5FF',
-              padding: '2px 5px',
-              outline: 'none'
-            }}
-          />
-          <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>
-            Click & Drag Rocket Builder (Press R to rotate held or hovered parts)
+  if (showSetup) {
+    const allParts = Object.values(PARTS_LIBRARY);
+    return (
+      <div className="vab-screen">
+        <div className="vab-header">
+          <h1>Vehicle Assembly</h1>
+          <div className="vab-header-actions">
+            <button className="btn btn-sm" onClick={() => onNavigate('menu')}>Back</button>
           </div>
         </div>
+        <div className="vab-body" style={{ gridTemplateColumns: '1fr 1fr', alignItems: 'start', padding: 40 }}>
+          <div className="glass" style={{ padding: 32, textAlign: 'center', maxWidth: 400, margin: '0 auto' }}>
+            <h2 style={{ fontFamily: 'Orbitron', fontSize: 18, color: 'var(--accent)', marginBottom: 24, letterSpacing: 2 }}>
+              Custom Build
+            </h2>
+            <label style={{ display: 'block', marginBottom: 16, fontSize: 12, color: 'var(--text-secondary)' }}>
+              Vehicle Name
+              <input
+                type="text"
+                value={rocketName}
+                onChange={(e) => setRocketName(e.target.value)}
+                placeholder="Enter name..."
+                style={{
+                  display: 'block', width: '100%', marginTop: 8, padding: '10px 16px',
+                  background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-glass)',
+                  borderRadius: 8, color: 'var(--text-primary)', fontFamily: 'Inter, sans-serif',
+                  fontSize: 14, outline: 'none',
+                }}
+                autoFocus
+              />
+            </label>
+            <button className="btn btn-primary" onClick={handleCreate} style={{ width: '100%' }}>Build</button>
+          </div>
 
-        <div style={{ display: 'flex', gap: '15px' }}>
-          <button
-            onClick={() => setPlacedParts([])}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#1E293B',
-              color: '#FFF',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 'bold'
-            }}
-          >
-            CLEAR GRID
-          </button>
-          
-          <button
-            onClick={compileSpacecraft}
-            style={{
-              padding: '8px 20px',
-              backgroundColor: '#10B981',
-              color: '#FFF',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              boxShadow: '0 0 10px rgba(16, 185, 129, 0.4)'
-            }}
-          >
-            LAUNCH MISSION
-          </button>
+          <div>
+            <div style={{ fontFamily: 'Orbitron', fontSize: 14, color: 'var(--accent)', marginBottom: 20, letterSpacing: 2, textAlign: 'center' }}>
+              Preset Rockets
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 400, margin: '0 auto' }}>
+              {presets.map((p, idx) => (
+                <div
+                  key={idx}
+                  className="glass-sm"
+                  style={{ padding: 20, cursor: 'pointer', transition: 'all 0.3s' }}
+                  onClick={() => createWithPreset(idx)}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.transform = ''; }}
+                >
+                  <div style={{ fontFamily: 'Orbitron', fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Click to select</div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
+    );
+  }
 
-      {/* Main assembly floor */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        
-        {/* Parts palette on the left */}
-        <div style={{
-          width: '280px',
-          backgroundColor: '#0A0F1D',
-          borderRight: '1px solid #1E293B',
-          padding: '20px',
-          overflowY: 'auto'
-        }}>
-          <h3 style={{ borderBottom: '1px solid #1E293B', paddingBottom: '8px', color: '#00E5FF', fontSize: '14px', letterSpacing: '1px' }}>
-            DRAG PALETTE
-          </h3>
-          <p style={{ fontSize: '11px', color: '#64748B', marginBottom: '15px' }}>
-            Hold & drag parts from here directly onto the grid. Hover over any part and press <b>R</b> to rotate it. Drop off-grid to delete.
-          </p>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {Object.values(PARTS_LIBRARY).map((part) => (
-              <div
-                key={part.id}
-                onMouseDown={() => handlePaletteStartDrag(part.id)}
-                style={{
-                  padding: '12px',
-                  backgroundColor: '#0F172A',
-                  border: '1px solid #1E293B',
-                  borderRadius: '6px',
-                  cursor: 'grab',
-                  userSelect: 'none',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#FFF' }}>{part.name}</div>
-                <div style={{ fontSize: '10px', color: '#94A3B8', marginTop: '4px' }}>
-                  Grid Size: {getPartGridSize(part.id).w}x{getPartGridSize(part.id).h}
+  if (!builder) return null;
+
+  const spacecraft = builder.build();
+  const stages = spacecraft.stages;
+  const currentStage = stages[selectedStage];
+  const allParts = Object.values(PARTS_LIBRARY);
+  const parts = filter === 'all'
+    ? allParts
+    : allParts.filter((p) => p.type === filter);
+
+  const addPart = (partId: string) => {
+    builder.addPartToStage(selectedStage, partId);
+    forceUpdate((n) => n + 1);
+  };
+
+  const addStage = () => {
+    builder.addStage();
+    setSelectedStage(builder.build().stages.length - 1);
+    forceUpdate((n) => n + 1);
+  };
+
+  const removePart = (partIdx: number) => {
+    builder.removePartFromStage(selectedStage, partIdx);
+    forceUpdate((n) => n + 1);
+  };
+
+  const removeStage = (idx: number) => {
+    builder.removeStage(idx);
+    if (selectedStage >= builder.build().stages.length) {
+      setSelectedStage(builder.build().stages.length - 1);
+    }
+    forceUpdate((n) => n + 1);
+  };
+
+  const launch = () => {
+    if (game) {
+      game.buildSpacecraft(rocketName || 'Rocket', (cb) => {
+        stages.forEach((s) => {
+          s.parts.forEach((p) => cb.addPartToStage(cb.build().stages.length - 1, p.id));
+          if (stages.indexOf(s) < stages.length - 1) cb.addStage();
+        });
+      });
+      onNavigate('flight');
+    }
+  };
+
+  const stageTypes: string[] = Array.from(new Set(allParts.map((p) => p.type)));
+
+  return (
+    <div className="vab-screen">
+      <div className="vab-header">
+        <h1>VAB — {rocketName || spacecraft.name}</h1>
+        <div className="vab-header-actions">
+          <button className="btn btn-primary btn-sm" onClick={launch}>Launch</button>
+          <button className="btn btn-sm" onClick={() => onNavigate('menu')}>Back</button>
+        </div>
+      </div>
+      <div className="vab-body">
+        <div className="vab-panel">
+          <div className="vab-panel-title">Parts</div>
+          <div className="part-selector">
+            <div className="part-filter">
+              <button className={`filter-btn ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>All</button>
+              {stageTypes.map((t) => (
+                <button key={t} className={`filter-btn ${filter === t ? 'active' : ''}`} onClick={() => setFilter(t)}>{t}</button>
+              ))}
+            </div>
+            <div className="part-list">
+              {parts.map((part: any) => (
+                <div key={part.id} className="part-card" onClick={() => addPart(part.id)}>
+                  <h4>{part.name}</h4>
+                  <div className="part-specs">
+                    <span className="spec">Mass: {part.dryMass} kg &middot; {part.type}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Snapping Grid Canvas Area */}
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          backgroundColor: '#030712',
-          position: 'relative'
-        }}>
-          <canvas
-            ref={canvasRef}
-            onMouseMove={handleMouseMove}
-            onMouseDown={handleCanvasMouseDown}
-            onMouseUp={handleCanvasMouseUp}
-            style={{ width: '100%', height: '100%', cursor: (draggedPartType || activeDragId) ? 'grabbing' : 'default' }}
-          />
+        <div className="vab-center">
+          <SpacecraftPreview spacecraft={spacecraft} />
+        </div>
 
-          {(draggedPartType || activeDragId) && (
-            <div style={{
-              position: 'absolute',
-              bottom: '20px',
-              backgroundColor: '#10B981',
-              padding: '6px 12px',
-              borderRadius: '4px',
-              fontSize: '12px',
-              color: '#FFF',
-              fontWeight: 'bold'
-            }}>
-              Dragging Part... Press <b>R</b> to rotate, release over the grid to snap place!
-            </div>
+        <div className="vab-panel">
+          <div className="vab-panel-title">Stages</div>
+          <div className="stage-list">
+            {stages.map((stage, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: 4, alignItems: 'stretch' }}>
+                <button
+                  className={`stage-btn ${selectedStage === idx ? 'active' : ''}`}
+                  onClick={() => setSelectedStage(idx)}
+                  style={{ flex: 1 }}
+                >
+                  Stage {stage.number} &mdash; {stage.parts.length} parts
+                </button>
+                {stages.length > 1 && (
+                  <button className="btn btn-sm btn-danger" onClick={() => removeStage(idx)} style={{ padding: '0 10px' }}>&times;</button>
+                )}
+              </div>
+            ))}
+            <button className="btn btn-sm" onClick={addStage}>+ Add Stage</button>
+          </div>
+
+          {currentStage && (
+            <>
+              <div className="vab-panel-title" style={{ fontSize: 10, marginBottom: 8 }}>
+                Stage {currentStage.number} Parts
+              </div>
+              <div className="parts-list">
+                {currentStage.parts.length === 0 && (
+                  <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: 8, textAlign: 'center' }}>
+                    No parts &mdash; click a part to add
+                  </div>
+                )}
+                {currentStage.parts.map((part: any, idx: number) => (
+                  <div key={idx} className="part-item">
+                    <span>{part.name}</span>
+                    <button className="remove-btn" onClick={() => removePart(idx)}>&times;</button>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
+
+          <div className="control-info">
+            <div className="info-item">
+              <span className="label">Total Mass</span>
+              <span className="value">{spacecraft.mass.toFixed(0)} kg</span>
+            </div>
+            <div className="info-item">
+              <span className="label">Stages</span>
+              <span className="value">{stages.length}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
