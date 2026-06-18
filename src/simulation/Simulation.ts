@@ -1,75 +1,159 @@
-export interface SimState {
-  rocket: RocketState;
-  earth: { x: number; y: number; radius: number };
-  moon: { x: number; y: number; radius: number; vx: number; vy: number };
-  phase: MissionPhase;
-  phaseTimer: number;
-  time: number;
-  timeWarp: number;
-  paused: boolean;
-  mapView: boolean;
-  zoom: number;
-  targetZoom: number;
-  autoMode: boolean;
-  missionStarted: boolean;
-  stageIndex: number;
-  totalStages: number;
-  landed: boolean;
-  crashed: boolean;
-  throttleInput: number;
+export const G = 6.67430e-11;
+export const EARTH_MASS = 5.972e24;
+export const EARTH_RADIUS = 6_371_000;
+export const MOON_MASS = 7.34767309e22;
+export const MOON_RADIUS = 1_737_000;
+export const MOON_ORBIT_R = 384_400_000;
+export const MOON_ORBIT_SPEED = Math.sqrt(G * EARTH_MASS / MOON_ORBIT_R);
+export const ATMOSPHERE_ALT = 100_000;
+export const LEO_ALT = 200_000;
+export const TLI_DELTA_V = 3200;
+export const LUNAR_INSERTION_DELTA_V = 800;
+export const SURFACE_G = 9.81;
+
+export interface SimBody {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  mass: number;
+  radius: number;
 }
 
-export interface RocketState {
+export interface SimRocket {
   x: number;
   y: number;
   vx: number;
   vy: number;
   angle: number;
-  angularVel: number;
   mass: number;
-  dryMass: number;
   fuel: number;
   maxFuel: number;
   thrust: number;
   isp: number;
+  stage: number;
+  totalStages: number;
+  active: boolean;
   throttle: number;
-  stageFuel: number;
-  stageMaxFuel: number;
-  stageDryMass: number;
+}
+
+export interface Particle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  size: number;
+  alpha: number;
+  color: number;
 }
 
 export type MissionPhase =
-  | 'standby'
+  | 'briefing'
   | 'countdown'
-  | 'liftoff'
+  | 'ignition'
+  | 'lift-off'
   | 'gravity-turn'
-  | 'ascent'
-  | 'stage-sep'
-  | 'coast'
+  | 'max-q'
+  | 'atmosphere-exit'
+  | 'meco'
+  | 'orbit-insertion'
+  | 'coast-to-tli'
   | 'tli-burn'
-  | 'trans-lunar'
+  | 'trans-lunar-coast'
   | 'lunar-insertion'
-  | 'landing-burn'
-  | 'touchdown';
+  | 'lunar-orbit'
+  | 'deorbit-burn'
+  | 'powered-descent'
+  | 'landing'
+  | 'landed';
 
-// Game-scale values (not real meters)
-export const EARTH_RADIUS = 180;
-export const MOON_RADIUS = 48;
-const G = 1200;
-const EARTH_MASS = 500000;
-const MOON_MASS = 6200;
-const ATMOSPHERE_ALT = 35;
-const SURFACE_FRICTION = 0.97;
-const GRAVITY_STRENGTH = 800;
+export interface SimState {
+  rocket: SimRocket;
+  earth: SimBody;
+  moon: SimBody;
+  time: number;
+  simTime: number;
+  dt: number;
+  timeWarp: number;
+  phase: MissionPhase;
+  phaseTimer: number;
+  altitude: number;
+  speed: number;
+  paused: boolean;
+  mapView: boolean;
+  zoom: number;
+  smoke: Particle[];
+  exhaust: Particle[];
+  autoMode: boolean;
+  launched: boolean;
+}
 
-export function createInitialState(
-  rocketMass: number,
-  thrustN: number,
-  isp: number,
-  totalStages: number,
-  autoMode: boolean
-): SimState {
-  const startY = -(EARTH_RADIUS - 4);
+function gravityAccel(x: number, y: number, body: SimBody): { ax: number; ay: number } {
+  const dx = body.x - x;
+  const dy = body.y - y;
+  const d2 = dx * dx + dy * dy;
+  const d = Math.sqrt(d2);
+  if (d < body.radius * 0.99) return { ax: 0, ay: 0 };
+  const a = G * body.mass / d2;
+  return { ax: a * dx / d, ay: a * dy / d };
+}
+
+function addSmoke(s: SimState, x: number, y: number, angle: number, throttle: number): void {
+  if (throttle <= 0) return;
+  const count = Math.floor(throttle * 3);
+  for (let i = 0; i < count; i++) {
+    const spread = (Math.random() - 0.5) * 0.5;
+    const speed = 20 + Math.random() * 40;
+    s.smoke.push({
+      x: x - Math.cos(angle) * 5 + (Math.random() - 0.5) * 4,
+      y: y + Math.sin(angle) * 5 + (Math.random() - 0.5) * 4,
+      vx: -Math.cos(angle) * speed * throttle + spread,
+      vy: Math.sin(angle) * speed * throttle + spread,
+      life: 1.5 + Math.random() * 2,
+      maxLife: 1.5 + Math.random() * 2,
+      size: 6 + Math.random() * 10,
+      alpha: 0.6 + Math.random() * 0.4,
+      color: throttle > 0.7 ? 0xffaa33 : 0x888888,
+    });
+  }
+}
+
+function addExhaust(s: SimState, x: number, y: number, angle: number, throttle: number): void {
+  if (throttle <= 0) return;
+  const count = Math.floor(throttle * 4);
+  for (let i = 0; i < count; i++) {
+    const spread = (Math.random() - 0.5) * 0.8;
+    const speed = 60 + Math.random() * 100;
+    s.exhaust.push({
+      x: x - Math.cos(angle) * 3,
+      y: y + Math.sin(angle) * 3,
+      vx: -Math.cos(angle) * speed * throttle + spread,
+      vy: Math.sin(angle) * speed * throttle + spread,
+      life: 0.15 + Math.random() * 0.25,
+      maxLife: 0.15 + Math.random() * 0.25,
+      size: 2 + Math.random() * 4,
+      alpha: 0.9,
+      color: Math.random() > 0.5 ? 0xffcc00 : 0xff6600,
+    });
+  }
+}
+
+function updateParticles(particles: Particle[], dt: number): void {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.life -= dt;
+    p.alpha = Math.max(0, (p.life / p.maxLife) * 0.6);
+    p.size *= 1.02;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+export function createInitialState(rocketMass: number, thrustN: number, isp: number, totalStages: number): SimState {
+  const startY = -(EARTH_RADIUS + 0.5);
   return {
     rocket: {
       x: 0,
@@ -77,358 +161,313 @@ export function createInitialState(
       vx: 0,
       vy: 0,
       angle: Math.PI / 2,
-      angularVel: 0,
       mass: rocketMass,
-      dryMass: rocketMass * 0.4,
-      fuel: rocketMass * 0.6,
-      maxFuel: rocketMass * 0.6,
+      fuel: rocketMass * 0.55,
+      maxFuel: rocketMass * 0.55,
       thrust: thrustN,
       isp,
+      stage: 0,
+      totalStages,
+      active: true,
       throttle: 0,
-      stageFuel: rocketMass * 0.6,
-      stageMaxFuel: rocketMass * 0.6,
-      stageDryMass: rocketMass * 0.4 / totalStages,
     },
-    earth: { x: 0, y: 0, radius: EARTH_RADIUS },
+    earth: {
+      x: 0, y: 0, vx: 0, vy: 0,
+      mass: EARTH_MASS, radius: EARTH_RADIUS,
+    },
     moon: {
-      x: 580,
-      y: 120,
-      radius: MOON_RADIUS,
-      vx: 0,
-      vy: 2.6,
+      x: MOON_ORBIT_R, y: 0, vx: 0, vy: MOON_ORBIT_SPEED,
+      mass: MOON_MASS, radius: MOON_RADIUS,
     },
-    phase: 'standby',
-    phaseTimer: 0,
     time: 0,
+    simTime: 0,
+    dt: 1 / 60,
     timeWarp: 1,
-    paused: false,
+    phase: 'briefing',
+    phaseTimer: 0,
+    altitude: 0,
+    speed: 0,
+    paused: true,
     mapView: false,
-    zoom: 3,
-    targetZoom: 3,
-    autoMode,
-    missionStarted: false,
-    stageIndex: 0,
-    totalStages,
-    landed: false,
-    crashed: false,
-    throttleInput: 0,
+    zoom: 1,
+    smoke: [],
+    exhaust: [],
+    autoMode: true,
+    launched: false,
   };
 }
 
-function clamp(v: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, v));
-}
-
-function dist(x1: number, y1: number, x2: number, y2: number) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-export function updateSimulation(s: SimState, dt: number): SimState {
-  const state = { ...s };
-  state.rocket = { ...state.rocket };
-  state.moon = { ...state.moon };
-
-  const r = state.rocket;
-  const dtScaled = dt * state.timeWarp;
-
-  if (state.paused || state.phase === 'touchdown') return state;
-
-  state.time += dtScaled;
-  state.phaseTimer += dtScaled;
-
-  // Moon orbit
-  const moonEarthDist = dist(state.moon.x, state.moon.y, state.earth.x, state.earth.y);
-  const moonG = G * EARTH_MASS / (moonEarthDist * moonEarthDist);
-  const moonGx = -moonG * (state.moon.x - state.earth.x) / moonEarthDist;
-  const moonGy = -moonG * (state.moon.y - state.earth.y) / moonEarthDist;
-  state.moon.vx += moonGx * dtScaled;
-  state.moon.vy += moonGy * dtScaled;
-  state.moon.x += state.moon.vx * dtScaled;
-  state.moon.y += state.moon.vy * dtScaled;
-
-  // Rocket gravity from Earth
-  const earthDist = dist(r.x, r.y, state.earth.x, state.earth.y);
-  let gForce = 0;
-  if (earthDist > state.earth.radius) {
-    gForce = G * EARTH_MASS / (earthDist * earthDist);
-  } else {
-    gForce = G * EARTH_MASS * earthDist / (state.earth.radius * state.earth.radius * state.earth.radius);
-  }
-  const gx = -gForce * (r.x - state.earth.x) / Math.max(earthDist, 1);
-  const gy = -gForce * (r.y - state.earth.y) / Math.max(earthDist, 1);
-
-  // Rocket gravity from Moon
-  const moonDist = dist(r.x, r.y, state.moon.x, state.moon.y);
-  if (moonDist > 1) {
-    const mG = G * MOON_MASS / (moonDist * moonDist);
-    r.vx += (-mG * (r.x - state.moon.x) / moonDist) * dtScaled;
-    r.vy += (-mG * (r.y - state.moon.y) / moonDist) * dtScaled;
-  }
-
-  // Atmospheric drag
-  const alt = earthDist - state.earth.radius;
-  let drag = 0;
-  if (alt < ATMOSPHERE_ALT && alt > 0) {
-    const density = 1 - alt / ATMOSPHERE_ALT;
-    const speed = Math.sqrt(r.vx * r.vx + r.vy * r.vy);
-    drag = 0.001 * density * speed * speed / r.mass;
-    const dragAngle = Math.atan2(r.vy, r.vx);
-    r.vx -= Math.cos(dragAngle) * drag * dtScaled;
-    r.vy -= Math.sin(dragAngle) * drag * dtScaled;
-  }
-
-  // Thrust
-  if (r.throttle > 0 && r.fuel > 0 && !state.landed) {
-    const thrustForce = r.thrust * r.throttle;
-    const tx = Math.cos(r.angle) * thrustForce / r.mass;
-    const ty = Math.sin(r.angle) * thrustForce / r.mass;
-    r.vx += tx * dtScaled;
-    r.vy += ty * dtScaled;
-
-    const fuelRate = (thrustForce / (r.isp * 9.81)) * dtScaled;
-    r.fuel -= fuelRate;
-    if (r.fuel < 0) r.fuel = 0;
-  }
-
-  // Apply gravity and update position
-  r.vx += gx * dtScaled;
-  r.vy += gy * dtScaled;
-  r.x += r.vx * dtScaled;
-  r.y += r.vy * dtScaled;
-
-  // Angle (auto-pilot or manual)
-  r.angle += r.angularVel * dtScaled;
-  r.angularVel *= 0.95;
-
-  // Ground collision
-  const distFromEarthCenter = dist(r.x, r.y, 0, 0);
-  if (distFromEarthCenter < state.earth.radius + 2 && !state.landed && !state.crashed) {
-    const speed = Math.sqrt(r.vx * r.vx + r.vy * r.vy);
-    if (speed > 5 && alt < 5) {
-      state.crashed = true;
-      state.phase = 'touchdown';
-      r.vx = 0;
-      r.vy = 0;
-    }
-    if (state.crashed) return state;
-  }
-
-  // Moon collision
-  const distFromMoonCenter = dist(r.x, r.y, state.moon.x, state.moon.y);
-  if (distFromMoonCenter < state.moon.radius + 2 && !state.landed) {
-    const speed = Math.sqrt(r.vx * r.vx + r.vy * r.vy);
-    if (speed < 8) {
-      r.x = state.moon.x + (r.x - state.moon.x) / distFromMoonCenter * (state.moon.radius + 1);
-      r.y = state.moon.y + (r.y - state.moon.y) / distFromMoonCenter * (state.moon.radius + 1);
-      r.vx = 0;
-      r.vy = 0;
-      r.throttle = 0;
-      state.landed = true;
-      state.phase = 'touchdown';
-    } else {
-      state.crashed = true;
-      state.phase = 'touchdown';
-      r.vx = 0;
-      r.vy = 0;
-    }
-    return state;
-  }
-
-  // === AUTO-PILOT ===
-  if (state.autoMode && state.missionStarted) {
-    executeAutoPilot(state, dtScaled);
-  }
-
-  // Smooth zoom
-  state.zoom += (state.targetZoom - state.zoom) * 0.05;
-
-  return state;
-}
-
-function executeAutoPilot(s: SimState, dt: number) {
+function executeAutoPilot(s: SimState): MissionPhase {
   const r = s.rocket;
-  const alt = dist(r.x, r.y, 0, 0) - EARTH_RADIUS;
-  const speed = Math.sqrt(r.vx * r.vx + r.vy * r.vy);
-  const moonDist = dist(r.x, r.y, s.moon.x, s.moon.y);
+  const altKm = s.altitude;
+  const alt = s.altitude * 1000;
 
   switch (s.phase) {
-    case 'standby':
+    case 'briefing':
       r.throttle = 0;
-      break;
+      r.angle = Math.PI / 2;
+      return 'briefing';
 
     case 'countdown':
       r.throttle = 0;
-      if (s.phaseTimer > 2) {
-        s.phase = 'liftoff';
-        s.phaseTimer = 0;
-      }
-      break;
-
-    case 'liftoff':
-      r.throttle = s.throttleInput > 0 ? s.throttleInput : 1;
       r.angle = Math.PI / 2;
-      if (alt > 3) {
-        s.phase = 'gravity-turn';
-        s.phaseTimer = 0;
-      }
-      break;
+      if (s.phaseTimer >= 5) return 'ignition';
+      return 'countdown';
+
+    case 'ignition':
+      r.throttle = 0.3;
+      r.angle = Math.PI / 2;
+      if (s.phaseTimer >= 0.5) return 'lift-off';
+      return 'ignition';
+
+    case 'lift-off':
+      r.throttle = 1;
+      r.angle = Math.PI / 2;
+      if (altKm > 0.5) return 'gravity-turn';
+      return 'lift-off';
 
     case 'gravity-turn':
       r.throttle = 1;
       {
-        const turnRate = 0.5;
-        r.angularVel = -turnRate * 0.3;
+        const turnProgress = Math.min(1, altKm / 60000);
+        r.angle = Math.PI / 2 - turnProgress * 0.6;
+        if (r.angle < Math.PI / 4) r.angle = Math.PI / 4;
       }
-      if (alt > 15) {
-        s.phase = 'ascent';
-        s.phaseTimer = 0;
-      }
-      break;
+      if (altKm > 40000) return 'max-q';
+      return 'gravity-turn';
 
-    case 'ascent':
+    case 'max-q':
+      r.throttle = 0.8;
+      {
+        const turnProgress = Math.min(1, altKm / 80000);
+        r.angle = Math.PI / 2 - turnProgress * 0.7;
+        if (r.angle < Math.PI / 6) r.angle = Math.PI / 6;
+      }
+      if (altKm > 80000) return 'atmosphere-exit';
+      return 'max-q';
+
+    case 'atmosphere-exit':
       r.throttle = 1;
       {
-        const targetAngle = Math.PI * 0.7;
-        const diff = targetAngle - r.angle;
-        r.angularVel = diff * 2;
+        const turnProgress = Math.min(1, (altKm - 80000) / 40000);
+        r.angle = Math.PI / 3 - turnProgress * 0.3;
+        if (r.angle < 0) r.angle = 0;
       }
-      if (alt > ATMOSPHERE_ALT || r.fuel < 0.01) {
-        s.phase = 'stage-sep';
-        s.phaseTimer = 0;
-      }
-      break;
+      if (r.fuel < 0.05) return 'meco';
+      if (altKm > 120 && Math.abs(r.angle) < 0.1) return 'orbit-insertion';
+      return 'atmosphere-exit';
 
-    case 'stage-sep':
+    case 'meco':
       r.throttle = 0;
-      if (s.phaseTimer > 0.5) {
-        r.throttle = 0;
-        // Auto-warp during coast
-        s.timeWarp = 5;
-        s.phase = 'coast';
-        s.phaseTimer = 0;
-      }
-      break;
+      return 'meco';
 
-    case 'coast':
+    case 'orbit-insertion':
+      r.throttle = r.fuel > 0.05 ? 1 : 0;
+      r.angle = 0;
+      if (altKm > LEO_ALT / 1000 && r.fuel < 0.05) return 'coast-to-tli';
+      if (altKm > LEO_ALT / 1000) return 'coast-to-tli';
+      return 'orbit-insertion';
+
+    case 'coast-to-tli':
       r.throttle = 0;
-      // Circularize angle to horizontal
+      r.angle = 0;
       {
-        const targetAngle = Math.PI;
-        const diff = targetAngle - r.angle;
-        r.angularVel = diff * 0.5;
-      }
-      // When approaching moon, prepare for TLI
-      {
-        const earthDist = dist(r.x, r.y, 0, 0);
-        // TLI when we're about 1/3 of the way to the moon
-        if ((moonDist < 350 && moonDist > 0) || s.phaseTimer > 4) {
-          s.timeWarp = 1;
-          s.phase = 'tli-burn';
-          s.phaseTimer = 0;
+        const moonAngle = Math.atan2(s.moon.y, s.moon.x);
+        const rocketAngle = Math.atan2(r.y, r.x);
+        const angleDiff = Math.abs(moonAngle - rocketAngle);
+        if (angleDiff < 0.3 || angleDiff > Math.PI * 2 - 0.3) {
+          return 'tli-burn';
         }
       }
-      break;
+      return 'coast-to-tli';
 
     case 'tli-burn':
       r.throttle = 1;
       {
-        // Point prograde (toward velocity direction)
-        const progradeAngle = Math.atan2(r.vy, r.vx);
-        const diff = progradeAngle - r.angle;
-        r.angularVel = diff * 2;
+        const toMoon = Math.atan2(s.moon.y - r.y, s.moon.x - r.x);
+        r.angle = toMoon;
       }
-      if (moonDist < 120 || r.fuel < 0.01) {
-        s.phase = 'trans-lunar';
-        s.phaseTimer = 0;
-        s.timeWarp = 5;
+      if (r.fuel < 0.02) return 'trans-lunar-coast';
+      {
+        const moonDist = Math.sqrt((r.x - s.moon.x) ** 2 + (r.y - s.moon.y) ** 2);
+        if (moonDist < MOON_RADIUS * 5) return 'lunar-insertion';
       }
-      break;
+      return 'tli-burn';
 
-    case 'trans-lunar':
+    case 'trans-lunar-coast':
       r.throttle = 0;
-      if (moonDist < 60) {
-        s.timeWarp = 1;
-        s.phase = 'lunar-insertion';
-        s.phaseTimer = 0;
+      {
+        const moonDist = Math.sqrt((r.x - s.moon.x) ** 2 + (r.y - s.moon.y) ** 2);
+        if (moonDist < MOON_RADIUS * 3) return 'lunar-insertion';
       }
-      break;
+      return 'trans-lunar-coast';
 
     case 'lunar-insertion':
       r.throttle = 1;
       {
-        // Point retrograde relative to moon
-        const angleToMoon = Math.atan2(s.moon.y - r.y, s.moon.x - r.x);
-        const retroAngle = angleToMoon + Math.PI;
-        const diff = retroAngle - r.angle;
-        r.angularVel = diff * 2;
+        const toMoon = Math.atan2(s.moon.y - r.y, s.moon.x - r.x);
+        r.angle = toMoon + Math.PI;
+        const moonDist = Math.sqrt((r.x - s.moon.x) ** 2 + (r.y - s.moon.y) ** 2);
+        if (moonDist < MOON_RADIUS * 1.5) return 'lunar-orbit';
+        if (r.fuel < 0.02) return 'lunar-orbit';
       }
-      if (moonDist < 55 || s.phaseTimer > 2) {
-        s.phase = 'landing-burn';
-        s.phaseTimer = 0;
-      }
-      break;
+      return 'lunar-insertion';
 
-    case 'landing-burn':
+    case 'lunar-orbit':
+      r.throttle = 0;
+      {
+        const moonDist = Math.sqrt((r.x - s.moon.x) ** 2 + (r.y - s.moon.y) ** 2);
+        if (s.phaseTimer > 2) return 'deorbit-burn';
+      }
+      return 'lunar-orbit';
+
+    case 'deorbit-burn':
       r.throttle = 1;
       {
-        const angleToMoon = Math.atan2(s.moon.y - r.y, s.moon.x - r.x);
-        const targetAngle = angleToMoon + Math.PI / 2;
-        const diff = targetAngle - r.angle;
-        r.angularVel = diff * 3;
+        const toMoon = Math.atan2(s.moon.y - r.y, s.moon.x - r.x);
+        r.angle = toMoon;
+        const moonDist = Math.sqrt((r.x - s.moon.x) ** 2 + (r.y - s.moon.y) ** 2);
+        if (moonDist < MOON_RADIUS * 1.2) return 'powered-descent';
+        if (r.fuel < 0.02) return 'powered-descent';
       }
-      // Throttle down as we approach
-      {
-        const moonDistNorm = (moonDist - MOON_RADIUS) / 60;
-        r.throttle = clamp(moonDistNorm, 0.2, 1);
-      }
-      if (moonDist < MOON_RADIUS + 5) {
-        r.throttle = 0.3;
-      }
-      break;
+      return 'deorbit-burn';
 
-    case 'touchdown':
+    case 'powered-descent':
+      r.throttle = 0.8;
+      {
+        const toMoon = Math.atan2(s.moon.y - r.y, s.moon.x - r.x);
+        r.angle = toMoon;
+        const moonDist = Math.sqrt((r.x - s.moon.x) ** 2 + (r.y - s.moon.y) ** 2);
+        const speed = Math.sqrt(r.vx * r.vx + r.vy * r.vy);
+        if (moonDist < MOON_RADIUS + 200) {
+          r.throttle = 1;
+        }
+        if (moonDist < MOON_RADIUS + 5) return 'landing';
+      }
+      return 'powered-descent';
+
+    case 'landing':
+      r.throttle = 1;
+      {
+        const toMoon = Math.atan2(s.moon.y - r.y, s.moon.x - r.x);
+        r.angle = toMoon;
+        const moonDist = Math.sqrt((r.x - s.moon.x) ** 2 + (r.y - s.moon.y) ** 2);
+        if (moonDist < MOON_RADIUS + 1) {
+          r.x = (r.x / moonDist) * (MOON_RADIUS + 0.5);
+          r.y = (r.y / moonDist) * (MOON_RADIUS + 0.5);
+          r.vx = 0;
+          r.vy = 0;
+          r.throttle = 0;
+          return 'landed';
+        }
+        if (r.fuel < 0.01) {
+          r.vx *= 0.1;
+          r.vy *= 0.1;
+          return 'landed';
+        }
+      }
+      return 'landing';
+
+    case 'landed':
       r.throttle = 0;
-      break;
+      r.vx = 0;
+      r.vy = 0;
+      return 'landed';
+
+    default:
+      return s.phase;
   }
+}
+
+export function updateSimulation(state: SimState, dt: number): SimState {
+  if (state.paused || state.phase === 'briefing' || state.phase === 'landed') return state;
+
+  const s = { ...state };
+  s.rocket = { ...s.rocket };
+  s.moon = { ...s.moon };
+  s.smoke = [...s.smoke];
+  s.exhaust = [...s.exhaust];
+
+  const effectiveDt = dt * s.timeWarp;
+  s.time += dt;
+  s.simTime += effectiveDt;
+  s.phaseTimer += effectiveDt;
+
+  const r = s.rocket;
+  const { earth, moon } = s;
+
+  // Moon orbit
+  const moonG = gravityAccel(moon.x, moon.y, earth);
+  moon.vx += moonG.ax * effectiveDt;
+  moon.vy += moonG.ay * effectiveDt;
+  moon.x += moon.vx * effectiveDt;
+  moon.y += moon.vy * effectiveDt;
+
+  // Rocket gravity
+  const gEarth = gravityAccel(r.x, r.y, earth);
+  const gMoon = gravityAccel(r.x, r.y, moon);
+  let ax = gEarth.ax + gMoon.ax;
+  let ay = gEarth.ay + gMoon.ay;
+
+  // Thrust
+  if (r.active && r.throttle > 0 && r.fuel > 0) {
+    const thrustForce = r.thrust * r.throttle;
+    ax += Math.cos(r.angle) * thrustForce / r.mass;
+    ay += Math.sin(r.angle) * thrustForce / r.mass;
+    const fuelRate = thrustForce / (r.isp * SURFACE_G);
+    r.fuel -= fuelRate * effectiveDt;
+    if (r.fuel < 0) r.fuel = 0;
+
+    addExhaust(s, r.x, r.y, r.angle, r.throttle);
+    if (s.altitude < 100000) {
+      addSmoke(s, r.x, r.y, r.angle, r.throttle);
+    }
+  }
+
+  r.vx += ax * effectiveDt;
+  r.vy += ay * effectiveDt;
+  r.x += r.vx * effectiveDt;
+  r.y += r.vy * effectiveDt;
+
+  // Altitude & speed
+  const distEarth = Math.sqrt(r.x * r.x + r.y * r.y);
+  s.altitude = Math.max(0, (distEarth - EARTH_RADIUS) / 1000);
+  s.speed = Math.sqrt(r.vx * r.vx + r.vy * r.vy);
+
+  // Update particles
+  updateParticles(s.smoke, effectiveDt);
+  updateParticles(s.exhaust, effectiveDt);
+
+  // Auto-pilot
+  if (s.autoMode) {
+    s.phase = executeAutoPilot(s);
+  }
+
+  return s;
 }
 
 export function togglePause(s: SimState): SimState {
   return { ...s, paused: !s.paused };
 }
 
-export function changeTimeWarp(s: SimState, dir: number): SimState {
-  const warps = [0.5, 1, 2, 5, 10, 50];
+export function setTimeWarp(s: SimState, dir: number): SimState {
+  const warps = [0.5, 1, 2, 5, 10, 50, 100, 500, 1000];
   const idx = warps.indexOf(s.timeWarp);
-  let next: number;
-  if (dir > 0) {
-    next = Math.min(idx + 1, warps.length - 1);
-  } else {
-    next = Math.max(idx - 1, 0);
-  }
+  const next = dir > 0 ? Math.min(idx + 1, warps.length - 1) : Math.max(idx - 1, 0);
   return { ...s, timeWarp: warps[next] };
 }
 
 export function toggleMapView(s: SimState): SimState {
-  const newMap = !s.mapView;
-  return { ...s, mapView: newMap, targetZoom: newMap ? 0.8 : 3 };
+  return { ...s, mapView: !s.mapView };
 }
 
 export function adjustZoom(s: SimState, dir: number): SimState {
-  const zooms = [1, 1.5, 2, 3, 5, 8, 12, 20, 40];
-  const idx = zooms.indexOf(s.targetZoom);
+  const zooms = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100];
+  const idx = zooms.indexOf(s.zoom);
   const next = dir > 0 ? Math.min(idx + 1, zooms.length - 1) : Math.max(idx - 1, 0);
-  return { ...s, targetZoom: zooms[next] };
+  return { ...s, zoom: zooms[next] };
 }
 
-export function setThrottle(s: SimState, val: number): SimState {
-  s.rocket.throttle = clamp(val, 0, 1);
-  s.throttleInput = s.rocket.throttle;
-  return s;
-}
-
-export function startMission(s: SimState): SimState {
-  if (s.phase !== 'standby') return s;
-  return { ...s, missionStarted: true, phase: 'countdown', phaseTimer: 0 };
+export function launchMission(s: SimState): SimState {
+  return { ...s, phase: 'countdown', paused: false, launched: true, phaseTimer: 0 };
 }

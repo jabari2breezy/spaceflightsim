@@ -17,24 +17,25 @@ const FlightScreen: React.FC<FlightScreenProps> = ({ onNavigate }) => {
   }, [game]);
 
   useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
+    const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (!game) return;
-        game.stop();
-        game.reset();
+        if (game) {
+          game.stop();
+          game.reset();
+        }
         onNavigate('menu');
       }
     };
-    window.addEventListener('keydown', handleEsc);
-    return () => window.removeEventListener('keydown', handleEsc);
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
   }, [game, onNavigate]);
 
   if (!game) return <div className="loading">Loading Flight...</div>;
 
   return (
     <div className="flight-screen">
-      <div className="flight-body" style={{ position: 'fixed', inset: 0 }}>
-        <FlightView game={game} autoMode={true} />
+      <div className="flight-body" style={{ gridTemplateColumns: '1fr' }}>
+        <FlightView game={game} />
       </div>
     </div>
   );
