@@ -299,6 +299,19 @@ const FlightView: React.FC<FlightViewProps> = ({ game }) => {
   const [showBriefing, setShowBriefing] = useState(true);
   const [autoMode, setAutoMode] = useState(true);
 
+  // Briefing keyboard handler - works while briefing is showing
+  useEffect(() => {
+    if (!showBriefing) return;
+    const handleBriefingKey = (e: KeyboardEvent) => {
+      if (e.key === ' ') {
+        e.preventDefault();
+        setShowBriefing(false);
+      }
+    };
+    window.addEventListener('keydown', handleBriefingKey);
+    return () => window.removeEventListener('keydown', handleBriefingKey);
+  }, [showBriefing]);
+
   useEffect(() => {
     if (showBriefing) return;
 
